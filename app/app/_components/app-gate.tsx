@@ -1,104 +1,185 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import AppShell from "./app-shell";
+import { createClient } from "@/lib/supabase/client";
+import { evaluatePermissions } from "@/lib/permissions";
 import type { AppView } from "../_config/menu";
 
-type Profile = {
+type ProfileRow = {
   user_id: string;
   ic_name: string | null;
-  status: "preinvite" | "pending" | "active" | "leadership" | "inactive" | null;
+  status: string | null;
   invite_redeemed_at: string | null;
-  site_role: "user" | "admin" | "owner" | null;
+  site_role: string | null;
+  rank_id?: string | null;
 };
+
+type GateState =
+  | { kind: "loading" }
+  | { kind: "redirecting" }
+  | { kind: "error"; message: string }
+  | { kind: "allowed"; view: AppView };
 
 export default function AppGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const supabase = createClient();
-
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<AppView>("member");
+  const pathname = usePathname();
+  const supabase = useMemo(() => createClient(), []);
+  const [state, setState] = useState<GateState>({ kind: "loading" });
 
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    async function runGate() {
       try {
-        const { data: userData, error: userErr } = await supabase.auth.getUser();
-        const user = userData?.user;
+        setState({ kind: "loading" });
 
-        if (userErr) console.error("auth.getUser error:", userErr);
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (cancelled) return;
+
+        if (authError) {
+          console.error("auth getUser error:", authError);
+          setState({ kind: "redirecting" });
+          router.replace("/login");
+          return;
+        }
 
         if (!user) {
-          if (!cancelled) router.replace("/login");
+          setState({ kind: "redirecting" });
+          router.replace("/login");
           return;
         }
 
-        // ✅ Mindig user_id alapján olvasunk profilt
-        const { data, error } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from("profiles")
-          .select("user_id,ic_name,status,invite_redeemed_at,site_role")
+          .select("user_id, ic_name, status, invite_redeemed_at, site_role, rank_id")
           .eq("user_id", user.id)
-          .maybeSingle();
+          .maybeSingle<ProfileRow>();
 
-        if (error) {
-          console.error("profiles read error:", error);
-          if (!cancelled) router.replace("/login");
+        if (cancelled) return;
+
+        if (profileError) {
+          console.error("profiles read error:", profileError);
+          setState({
+            kind: "error",
+            message: "Nem sikerült betölteni a profiladatokat.",
+          });
           return;
         }
 
-        // Ha még nincs profil sor (pl. trigger előtt), küldjük onboardingra
-        if (!data) {
-          console.warn("profiles missing for user:", user.id);
-          if (!cancelled) router.replace("/onboarding");
+        if (!profile) {
+          setState({ kind: "redirecting" });
+          router.replace("/onboarding");
           return;
         }
 
-        const p: Profile = {
-          user_id: data.user_id,
-          ic_name: data.ic_name ?? null,
-          status: (data.status as any) ?? null,
-          invite_redeemed_at: data.invite_redeemed_at ?? null,
-          site_role: (data.site_role as any) ?? "user",
-        };
-
-        if (!p.ic_name) {
-          if (!cancelled) router.replace("/onboarding");
+        if (!profile.ic_name || !profile.ic_name.trim()) {
+          setState({ kind: "redirecting" });
+          router.replace("/onboarding");
           return;
         }
 
-        if (!p.invite_redeemed_at) {
-          if (!cancelled) router.replace("/invite");
+        if (!profile.invite_redeemed_at) {
+          setState({ kind: "redirecting" });
+          router.replace("/invite");
           return;
         }
 
-        if (p.status === "inactive") {
-          if (!cancelled) router.replace("/login");
+        let rankName: string | null = null;
+
+        if (profile.rank_id) {
+          const { data: rankRow } = await supabase
+            .from("ranks")
+            .select("name")
+            .eq("id", profile.rank_id)
+            .maybeSingle<{ name: string | null }>();
+
+          rankName = rankRow?.name ?? null;
+        }
+
+        const permissions = evaluatePermissions(profile, { pathname, rankName });
+
+        if (!permissions.canAccessApp) {
+          setState({
+            kind: "error",
+            message:
+              "Nincs jogosultságod az oldal használatához. A tagságod jelenleg inaktív vagy fekete listás állapotban van. Ha úgy gondolod, hogy ez tévedés, keresd a vezetőséget.",
+          });
           return;
         }
 
-        // View döntés
-        if (p.status === "pending") setView("tgf");
-        else if (p.status === "leadership" || p.site_role === "admin" || p.site_role === "owner")
-          setView("leadership");
-        else setView("member");
+        if (!permissions.canAccessCurrentPath) {
+          setState({
+            kind: "error",
+            message: "Ehhez az oldalhoz nincs jogosultságod.",
+          });
+          return;
+        }
 
-        if (!cancelled) setLoading(false);
-      } catch (e) {
-        console.error("AppGate fatal:", e);
-        if (!cancelled) router.replace("/login");
+        setState({ kind: "allowed", view: permissions.appView });
+      } catch (error) {
+        console.error("AppGate unexpected error:", error);
+        if (cancelled) return;
+
+        setState({
+          kind: "error",
+          message: "Váratlan hiba történt az alkalmazás betöltése közben.",
+        });
       }
-    })();
+    }
+
+    runGate();
 
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [pathname, router, supabase]);
 
-  if (loading) return <div className="p-6">Betöltés…</div>;
+  if (state.kind === "loading" || state.kind === "redirecting") {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6 text-white">
+        <div className="lmr-surface w-full max-w-md rounded-[28px] p-6 text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+          <h1 className="text-lg font-semibold tracking-tight">Betöltés...</h1>
+          <p className="mt-2 text-sm text-white/70">
+            Ellenőrizzük a belépést és a jogosultságokat.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-  return <AppShell view={view}>{children}</AppShell>;
+  if (state.kind === "error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6 text-white">
+        <div className="w-full max-w-md rounded-[28px] border border-red-400/20 bg-[rgba(53,10,18,0.72)] p-6 shadow-[0_20px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl">
+          <h1 className="text-lg font-semibold tracking-tight">Hozzáférés / betöltési hiba</h1>
+          <p className="mt-2 text-sm text-white/75">{state.message}</p>
+
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => router.replace("/app")}
+              className="rounded-2xl border border-white/15 bg-white/[0.05] px-4 py-2 text-sm hover:bg-white/[0.08]"
+            >
+              Vissza a főoldalra
+            </button>
+
+            <button
+              onClick={() => router.replace("/login")}
+              className="rounded-2xl border border-white/15 bg-white/[0.05] px-4 py-2 text-sm hover:bg-white/[0.08]"
+            >
+              Bejelentkezés
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <AppShell view={state.view}>{children}</AppShell>;
 }

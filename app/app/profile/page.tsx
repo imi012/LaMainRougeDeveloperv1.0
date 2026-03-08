@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { canUseMemberFeatures, isLeadershipProfile } from "@/lib/permissions";
 
 type ProfileRow = {
   user_id: string;
@@ -50,340 +51,198 @@ export default function ProfilePage() {
   const params = useSearchParams();
   const router = useRouter();
 
-  const userParam = params.get("user"); // ha van: más profilját nézzük
+  const userParam = params.get("user");
   const [me, setMe] = useState<ProfileRow | null>(null);
-
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [rank, setRank] = useState<RankRow | null>(null);
-
+  const [rankMissing, setRankMissing] = useState(false);
   const [bioDraft, setBioDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-
   const [warnings, setWarnings] = useState<WarningRow[]>([]);
+  const [actionsCount, setActionsCount] = useState(0);
+  const [eventsCount, setEventsCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const isLeadership = useMemo(
-    () => me?.site_role === "admin" || me?.site_role === "owner",
-    [me]
-  );
-
-  const isSelf = useMemo(() => {
-    if (!me || !profile) return false;
-    return me.user_id === profile.user_id;
-  }, [me, profile]);
-
+  const isLeadership = useMemo(() => isLeadershipProfile(me), [me]);
+  const isSelf = useMemo(() => !!me && !!profile && me.user_id === profile.user_id, [me, profile]);
   const canEdit = useMemo(() => isSelf || isLeadership, [isSelf, isLeadership]);
-
-  const canSeeStats = useMemo(() => isSelf || isLeadership, [isSelf, isLeadership]);
+  const canSeeStats = useMemo(() => isSelf || isLeadership || canUseMemberFeatures(me), [isSelf, isLeadership, me]);
 
   useEffect(() => {
     (async () => {
       setError(null);
-
-      const { data: userData } = await supabase.auth.getUser();
-      const authUser = userData?.user;
-
-      if (!authUser) {
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth?.user;
+      if (!user) {
         router.replace("/login");
         return;
       }
 
-      // Saját profil (jogok megállapításához)
-      const { data: myProfile, error: myErr } = await supabase
+      const { data: meData, error: meErr } = await supabase
         .from("profiles")
         .select("user_id,ic_name,avatar_url,bio,status,created_at,site_role,rank_id")
-        .eq("user_id", authUser.id)
+        .eq("user_id", user.id)
         .maybeSingle();
-
-      if (myErr || !myProfile) {
-        setError(myErr?.message ?? "Nem találom a saját profilodat.");
+      if (meErr) {
+        setError(meErr.message);
         return;
       }
+      const meProfile = (meData ?? null) as ProfileRow | null;
+      setMe(meProfile);
 
-      setMe(myProfile as any);
-
-      const targetUserId = userParam || authUser.id;
-
-      // Target profile
-      const { data: targetProfile, error: profErr } = await supabase
+      const targetUserId = userParam || user.id;
+      const { data: pData, error: pErr } = await supabase
         .from("profiles")
         .select("user_id,ic_name,avatar_url,bio,status,created_at,site_role,rank_id")
         .eq("user_id", targetUserId)
         .maybeSingle();
-
-      if (profErr || !targetProfile) {
-        setError(profErr?.message ?? "Profil nem található.");
+      if (pErr) {
+        setError(pErr.message);
         return;
       }
 
-      setProfile(targetProfile as any);
-      setBioDraft(targetProfile.bio ?? "");
+      const targetProfile = (pData ?? null) as ProfileRow | null;
+      setProfile(targetProfile);
+      setBioDraft(targetProfile?.bio ?? "");
 
-      // Rank név
-      if (targetProfile.rank_id) {
-        const { data: r, error: rErr } = await supabase
+      if (targetProfile?.rank_id) {
+        const { data: rData, error: rErr } = await supabase
           .from("ranks")
           .select("id,name,priority")
           .eq("id", targetProfile.rank_id)
           .maybeSingle();
-
-        if (!rErr) setRank((r as any) ?? null);
+        if (!rErr && rData) {
+          setRank(rData as RankRow);
+          setRankMissing(false);
+        } else {
+          setRank(null);
+          setRankMissing(true);
+        }
       } else {
         setRank(null);
+        setRankMissing(false);
       }
 
-      // Warning részletek csak self/vezetőség
-      if (targetProfile.user_id && (targetProfile.user_id === authUser.id || (myProfile.site_role === "admin" || myProfile.site_role === "owner"))) {
-        const { data: w, error: wErr } = await supabase
-          .from("warnings")
-          .select("id,reason,issued_at,expires_at,is_active")
-          .eq("user_id", targetProfile.user_id)
-          .order("issued_at", { ascending: false });
+      const { data: warnData } = await supabase
+        .from("warnings")
+        .select("id,reason,issued_at,expires_at,is_active")
+        .eq("user_id", targetUserId)
+        .order("issued_at", { ascending: false });
+      setWarnings((warnData ?? []) as WarningRow[]);
 
-        if (!wErr) setWarnings((w ?? []) as any);
-      } else {
-        setWarnings([]);
-      }
+      const { count: actionCount } = await supabase
+        .from("actions")
+        .select("id", { count: "exact", head: true })
+        .contains("participant_user_ids", [targetUserId]);
+      const { count: eventCount } = await supabase
+        .from("event_participants")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", targetUserId)
+        .eq("attended", true);
+
+      setActionsCount(actionCount ?? 0);
+      setEventsCount(eventCount ?? 0);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userParam]);
+  }, [router, supabase, userParam]);
 
   async function saveBio() {
-    if (!profile) return;
-    if (!canEdit) return;
-
+    if (!profile || !canEdit) return;
     setSaving(true);
     setError(null);
-
-    const { error: upErr } = await supabase
-      .from("profiles")
-      .update({ bio: bioDraft })
-      .eq("user_id", profile.user_id);
-
+    const { error: upErr } = await supabase.from("profiles").update({ bio: bioDraft.trim() || null }).eq("user_id", profile.user_id);
     if (upErr) setError(upErr.message);
-    else setProfile((p) => (p ? { ...p, bio: bioDraft } : p));
-
+    else setProfile((p) => (p ? { ...p, bio: bioDraft.trim() || null } : p));
     setSaving(false);
   }
 
   async function uploadAvatar(file: File) {
-    if (!profile) return;
-    if (!canEdit) return;
-
+    if (!profile || !canEdit) return;
     setUploading(true);
     setError(null);
-
     try {
       const ext = fileExt(file.name);
       const path = `${profile.user_id}/avatar.${ext}`;
-
-      // upload (upsert)
-      const { error: upErr } = await supabase.storage
-        .from("avatars")
-        .upload(path, file, { upsert: true, contentType: file.type });
-
-      if (upErr) {
-        setError(upErr.message);
-        setUploading(false);
+      const { error: uploadErr } = await supabase.storage.from("avatars").upload(path, file, { cacheControl: "3600", upsert: true });
+      if (uploadErr) {
+        setError(uploadErr.message);
         return;
       }
-
-      // public url
-      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-      const publicUrl = data?.publicUrl ?? null;
-
-      if (!publicUrl) {
-        setError("Nem sikerült public URL-t kérni (avatars bucket legyen Public).");
-        setUploading(false);
-        return;
-      }
-
-      const { error: profErr } = await supabase
-        .from("profiles")
-        .update({ avatar_url: publicUrl })
-        .eq("user_id", profile.user_id);
-
-      if (profErr) {
-        setError(profErr.message);
-      } else {
-        setProfile((p) => (p ? { ...p, avatar_url: publicUrl } : p));
-      }
+      const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(path);
+      const { error: profErr } = await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("user_id", profile.user_id);
+      if (profErr) setError(profErr.message);
+      else setProfile((p) => (p ? { ...p, avatar_url: publicUrl } : p));
     } finally {
       setUploading(false);
     }
   }
 
-  if (!profile) return <div className="p-6">Betöltés…</div>;
+  if (!profile) return <div className="lmr-page"><div className="lmr-card rounded-[28px] p-6 text-sm text-white/70">Betöltés...</div></div>;
 
   const avatar = profile.avatar_url || "";
-
-  // stats placeholder (később rákötjük)
-  const warningsActiveCount = (() => {
-    const now = new Date().toISOString();
-    return warnings.filter((w) => {
-      if (!w.is_active) return false;
-      if (!w.expires_at) return true;
-      return w.expires_at > now;
-    }).length;
-  })();
-
-  const actionsCount = 0;
-  const eventsCount = 0;
+  const warningsActiveCount = warnings.filter((w) => w.is_active && (!w.expires_at || w.expires_at > new Date().toISOString())).length;
 
   return (
-    <div className="max-w-5xl">
-      <div className="flex items-start gap-6">
-        {/* Left: avatar card */}
-        <div className="w-[260px] shrink-0">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="h-44 w-full rounded-2xl border border-white/10 bg-black/40 overflow-hidden flex items-center justify-center">
-              {avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatar} alt="Avatar" className="h-full w-full object-cover" />
-              ) : (
-                <div className="text-sm opacity-60">Nincs profilkép</div>
-              )}
+    <div className="lmr-page">
+      <section className="lmr-hero rounded-[28px] p-6 md:p-8">
+        <span className="lmr-chip inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Profil</span>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">{profile.ic_name ?? "Profil"}</h1>
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-white/75">
+          {canEdit ? "Saját profilodat vagy vezetőségként másét is szerkesztheted." : "Itt megtekintheted a profilhoz tartozó adatokat, rangot és statisztikákat."}
+        </p>
+      </section>
+
+      {error && <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>}
+
+      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="lmr-card rounded-[28px] p-5">
+          <div className="overflow-hidden rounded-[24px] border border-white/10 bg-black/30">
+            <div className="flex h-52 items-center justify-center">
+              {avatar ? <img src={avatar} alt="Avatar" className="h-full w-full object-cover" /> : <div className="text-sm text-white/55">Nincs profilkép</div>}
             </div>
-
-            {/* InGame név a kép alatt */}
-            <div className="mt-3 text-lg font-semibold">
-              {profile.ic_name ?? "—"}
-            </div>
-
-            <div className="mt-1 text-sm opacity-70">
-              Rang: <span className="opacity-90">{rank?.name ?? "—"}</span>
-            </div>
-
-            {canEdit && (
-              <div className="mt-4">
-                <label className="text-xs opacity-70">Profilkép feltöltés</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="mt-2 block w-full text-sm"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) uploadAvatar(f);
-                  }}
-                />
-                <div className="mt-2 text-xs opacity-60">
-                  {uploading ? "Feltöltés..." : "Bucket: avatars (Public)"}
-                </div>
-              </div>
-            )}
-
-            {!canEdit && (
-              <div className="mt-4 text-xs opacity-60">
-                Más profilját csak megtekinteni tudod.
-              </div>
-            )}
           </div>
-        </div>
-
-        {/* Right: content */}
-        <div className="flex-1">
-          <h1 className="text-3xl font-bold">Profil</h1>
-          <p className="mt-2 opacity-80">
-            {canEdit
-              ? "Saját profilodat (vagy vezetőségként másét) szerkesztheted."
-              : "Megtekintés"}
-          </p>
-
-          {error && (
-            <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm">
-              {error}
+          <div className="mt-4 text-xl font-semibold text-white">{profile.ic_name ?? "—"}</div>
+          <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/78">Rang: <span className="font-medium text-white">{rank?.name ?? (rankMissing ? "Törölt rang" : "—")}</span></div>
+          {canEdit ? (
+            <div className="mt-5">
+              <label className="text-xs uppercase tracking-[0.14em] text-white/55">Profilkép feltöltés</label>
+              <input type="file" accept="image/*" className="mt-3 block w-full text-sm text-white/78" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAvatar(f); }} />
+              <div className="mt-2 text-xs text-white/50">{uploading ? "Feltöltés..." : "Bucket: avatars (public)"}</div>
             </div>
-          )}
+          ) : <div className="mt-5 text-xs text-white/50">Más profilját csak megtekinteni tudod.</div>}
+        </aside>
 
-          {/* Bio */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold">Profil leírás</div>
-
+        <div className="space-y-6">
+          <section className="lmr-card rounded-[28px] p-5 md:p-6">
+            <h2 className="text-xl font-semibold">Profil leírás</h2>
+            <p className="mt-1 text-sm text-white/60">Rövid bemutatkozás és személyes profil információ.</p>
             {canEdit ? (
               <>
-                <textarea
-                  className="mt-3 w-full rounded-2xl border border-white/15 bg-black/40 p-3 min-h-[120px]"
-                  value={bioDraft}
-                  onChange={(e) => setBioDraft(e.target.value)}
-                  placeholder="Írj magadról pár sort..."
-                />
-                <div className="mt-3 flex justify-end">
-                  <button
-                    className="rounded-xl border border-white/15 px-4 py-2 hover:bg-white/5"
-                    onClick={saveBio}
-                    disabled={saving}
-                  >
-                    {saving ? "Mentés..." : "Mentés"}
-                  </button>
-                </div>
+                <textarea className="mt-4 min-h-[140px] w-full rounded-[24px] border px-4 py-3 text-sm" value={bioDraft} onChange={(e) => setBioDraft(e.target.value)} placeholder="Írj magadról pár sort..." />
+                <div className="mt-4 flex justify-end"><button className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm font-medium" onClick={saveBio} disabled={saving}>{saving ? "Mentés..." : "Mentés"}</button></div>
               </>
-            ) : (
-              <div className="mt-3 whitespace-pre-wrap opacity-90">
-                {profile.bio?.trim() ? profile.bio : "—"}
-              </div>
-            )}
-          </div>
+            ) : <div className="mt-4 whitespace-pre-wrap rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4 text-white/85">{profile.bio?.trim() ? profile.bio : "—"}</div>}
+          </section>
 
-          {/* Stats: csak saját / vezetőség */}
           {canSeeStats && (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-sm font-semibold">Statisztika</div>
-
-              <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                  <div className="text-xs opacity-60">Felvéve</div>
-                  <div className="text-lg font-semibold">{ymd(profile.created_at)}</div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                  <div className="text-xs opacity-60">Figyelmeztetések</div>
-                  <div className="text-lg font-semibold">{warningsActiveCount}</div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                  <div className="text-xs opacity-60">Események</div>
-                  <div className="text-lg font-semibold">{eventsCount}</div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                  <div className="text-xs opacity-60">Akciók</div>
-                  <div className="text-lg font-semibold">{actionsCount}</div>
-                </div>
+            <section className="lmr-card rounded-[28px] p-5 md:p-6">
+              <h2 className="text-xl font-semibold">Statisztika</h2>
+              <p className="mt-1 text-sm text-white/60">A részt vett események, akciók és figyelmeztetések áttekintése.</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="lmr-surface-soft rounded-[24px] p-4"><div className="text-xs uppercase tracking-[0.14em] text-white/52">Felvéve</div><div className="mt-2 text-lg font-semibold">{ymd(profile.created_at)}</div></div>
+                <div className="lmr-surface-soft rounded-[24px] p-4"><div className="text-xs uppercase tracking-[0.14em] text-white/52">Figyelmeztetések</div><div className="mt-2 text-lg font-semibold">{warningsActiveCount}</div></div>
+                <div className="lmr-surface-soft rounded-[24px] p-4"><div className="text-xs uppercase tracking-[0.14em] text-white/52">Események</div><div className="mt-2 text-lg font-semibold">{eventsCount}</div></div>
+                <div className="lmr-surface-soft rounded-[24px] p-4"><div className="text-xs uppercase tracking-[0.14em] text-white/52">Akciók</div><div className="mt-2 text-lg font-semibold">{actionsCount}</div></div>
               </div>
-
-              <div className="mt-3 text-xs opacity-60">
-                (Események/Akciók számláló később lesz rákötve a bejegyzésekre.)
-              </div>
-            </div>
+            </section>
           )}
 
-          {/* Warnings részletek: csak self / vezetőség */}
           {canSeeStats && (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-sm font-semibold">Figyelmeztetések (részletek)</div>
-
-              {warnings.length === 0 ? (
-                <div className="mt-3 text-sm opacity-70">Nincs figyelmeztetés.</div>
-              ) : (
-                <div className="mt-3 grid gap-2">
-                  {warnings.map((w) => (
-                    <div key={w.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                      <div className="text-sm font-semibold">{w.reason}</div>
-                      <div className="mt-1 text-xs opacity-70">
-                        Kiállítva: {ymd(w.issued_at)} • Lejárat: {w.expires_at ? ymd(w.expires_at) : "—"} •
-                        Állapot: {w.is_active ? "Aktív" : "Inaktív"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="mt-3 text-xs opacity-60">
-                Ezt csak a saját profilodon látod (illetve vezetőség látja).
-              </div>
-            </div>
+            <section className="lmr-card rounded-[28px] p-5 md:p-6">
+              <h2 className="text-xl font-semibold">Figyelmeztetések</h2>
+              <p className="mt-1 text-sm text-white/60">Részletes lista a korábbi és aktív figyelmeztetésekről.</p>
+              {warnings.length === 0 ? <div className="lmr-empty-state mt-4 rounded-[24px] px-4 py-8 text-sm">Nincs figyelmeztetés.</div> : <div className="mt-4 grid gap-3">{warnings.map((w) => <div key={w.id} className="lmr-surface-soft rounded-[24px] p-4"><div className="font-semibold text-white">{w.reason}</div><div className="mt-2 text-xs text-white/62">Kiállítva: {ymd(w.issued_at)} • Lejárat: {w.expires_at ? ymd(w.expires_at) : "—"} • Állapot: {w.is_active ? "Aktív" : "Inaktív"}</div></div>)}</div>}
+            </section>
           )}
         </div>
       </div>

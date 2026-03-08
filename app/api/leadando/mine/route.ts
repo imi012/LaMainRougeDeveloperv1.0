@@ -1,30 +1,23 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-function getBearerToken(req: Request) {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!auth) return null;
-  const m = auth.match(/^Bearer\s+(.+)$/i);
-  return m?.[1]?.trim() || null;
-}
+import { requireAppUser } from "@/lib/server/app-auth";
 
 export async function GET(req: Request) {
-  const token = getBearerToken(req);
-  if (!token) return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
+  const auth = await requireAppUser(req, {
+    requireMember: true,
+    allowPending: false,
+  });
 
-  const admin = createAdminClient();
-
-  const { data: userRes, error: userErr } = await admin.auth.getUser(token);
-  if (userErr || !userRes?.user) {
-    return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, message: auth.message }, { status: auth.status });
   }
 
-  const user_id = userRes.user.id;
+  const admin = createAdminClient();
 
   const { data, error } = await admin
     .from("leadando_submissions")
     .select("id,imgur_url,weeks,submitted_at,is_approved,approved_at,approved_by")
-    .eq("user_id", user_id)
+    .eq("user_id", auth.userId)
     .order("submitted_at", { ascending: false })
     .limit(50);
 

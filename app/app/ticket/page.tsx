@@ -15,23 +15,15 @@ function isLockAbortError(reason: any) {
 export default function TicketPage() {
   const supabase = createClient();
   const router = useRouter();
-
   const [token, setToken] = useState<string | null>(null);
-
   const [type, setType] = useState<TicketType>("sanction");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-
-  // Szankció
   const [sanctionImgur, setSanctionImgur] = useState("");
   const [sanctionReason, setSanctionReason] = useState("");
-
-  // Inaktivitás
   const [inactiveFrom, setInactiveFrom] = useState("");
   const [inactiveTo, setInactiveTo] = useState("");
-
-  // Névváltás
   const [oldName, setOldName] = useState("");
   const [newName, setNewName] = useState("");
   const [nameReason, setNameReason] = useState("");
@@ -51,71 +43,26 @@ export default function TicketPage() {
     }
   }
 
-  useEffect(() => {
-    loadSessionStable();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { void loadSessionStable(); }, []);
 
   async function submit() {
-    setErr(null);
-    setMsg(null);
-
-    if (!token) {
-      setErr("Nincs bejelentkezve.");
-      return;
-    }
-
-    if (type === "sanction") {
-      if (!sanctionImgur.trim() || !sanctionReason.trim()) {
-        setErr("Szankcióhoz kötelező a kép (imgur link) és az ok.");
-        return;
-      }
-    }
-    if (type === "inactivity") {
-      if (!inactiveFrom || !inactiveTo) {
-        setErr("Inaktivitásnál kötelező mettől–meddig.");
-        return;
-      }
-    }
-    if (type === "namechange") {
-      if (!oldName.trim() || !newName.trim() || !nameReason.trim()) {
-        setErr("Névváltásnál kötelező: előző név, új név, indok.");
-        return;
-      }
-    }
+    setErr(null); setMsg(null);
+    if (!token) return setErr("Nincs bejelentkezve.");
+    if (type === "sanction" && (!sanctionImgur.trim() || !sanctionReason.trim())) return setErr("Szankcióhoz kötelező a kép (imgur link) és az ok.");
+    if (type === "inactivity" && (!inactiveFrom || !inactiveTo)) return setErr("Inaktivitásnál kötelező mettől–meddig.");
+    if (type === "namechange" && (!oldName.trim() || !newName.trim() || !nameReason.trim())) return setErr("Névváltásnál kötelező: előző név, új név, indok.");
 
     setBusy(true);
     try {
       const res = await fetch("/api/tickets/create", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          type,
-          sanction_imgur_url: sanctionImgur.trim(),
-          sanction_reason: sanctionReason.trim(),
-          inactivity_from: inactiveFrom,
-          inactivity_to: inactiveTo,
-          old_name: oldName.trim(),
-          new_name: newName.trim(),
-          namechange_reason: nameReason.trim(),
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type, sanction_imgur_url: sanctionImgur.trim(), sanction_reason: sanctionReason.trim(), inactivity_from: inactiveFrom, inactivity_to: inactiveTo, old_name: oldName.trim(), new_name: newName.trim(), namechange_reason: nameReason.trim() }),
       });
-
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) throw new Error(json?.message || "Hiba történt.");
-
       setMsg("Ticket elküldve!");
-
-      setSanctionImgur("");
-      setSanctionReason("");
-      setInactiveFrom("");
-      setInactiveTo("");
-      setOldName("");
-      setNewName("");
-      setNameReason("");
+      setSanctionImgur(""); setSanctionReason(""); setInactiveFrom(""); setInactiveTo(""); setOldName(""); setNewName(""); setNameReason("");
     } catch (e: any) {
       setErr(e?.message ?? "Hiba történt.");
     } finally {
@@ -124,123 +71,28 @@ export default function TicketPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl">
-      <h1 className="text-3xl font-bold">Ticket nyitás</h1>
-      <p className="mt-2 text-sm opacity-80">
-        Válaszd ki a ticket típusát, majd töltsd ki a szükséges mezőket.
-      </p>
-
-      {err && (
-        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-900/20 p-3 text-sm text-red-200">
-          {err}
-        </div>
-      )}
-      {msg && (
-        <div className="mt-4 rounded-xl border border-green-500/30 bg-green-900/20 p-3 text-sm text-green-200">
-          {msg}
-        </div>
-      )}
-
-      <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm opacity-80">Ticket típusa</div>
-        <select
-          className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
-          value={type}
-          onChange={(e) => setType(e.target.value as TicketType)}
-        >
+    <div className="lmr-page lmr-page-compact">
+      <section className="lmr-hero rounded-[28px] p-6 md:p-8">
+        <span className="lmr-chip inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Ticket</span>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Ticket nyitás</h1>
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-white/75">Válaszd ki a ticket típusát, majd töltsd ki a szükséges mezőket.</p>
+      </section>
+      {err && <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{err}</div>}
+      {msg && <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{msg}</div>}
+      <section className="lmr-card rounded-[28px] p-5 md:p-6">
+        <label className="text-xs uppercase tracking-[0.14em] text-white/55">Ticket típusa</label>
+        <select className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm" value={type} onChange={(e) => setType(e.target.value as TicketType)}>
           <option value="sanction">Szankciók</option>
           <option value="inactivity">Inaktivitás</option>
           <option value="namechange">Névváltás</option>
         </select>
 
-        {type === "sanction" && (
-          <div className="mt-4 grid gap-3">
-            <div>
-              <div className="text-sm opacity-80">Szankcióról készült kép (imgur link)</div>
-              <input
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
-                value={sanctionImgur}
-                onChange={(e) => setSanctionImgur(e.target.value)}
-                placeholder="https://imgur.com/..."
-              />
-            </div>
-            <div>
-              <div className="text-sm opacity-80">Ok</div>
-              <textarea
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm min-h-[90px]"
-                value={sanctionReason}
-                onChange={(e) => setSanctionReason(e.target.value)}
-                placeholder="Írd le röviden az okot..."
-              />
-            </div>
-          </div>
-        )}
+        {type === "sanction" && <div className="mt-5 grid gap-4"><div><div className="text-sm text-white/72">Szankcióról készült kép (imgur link)</div><input className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm" value={sanctionImgur} onChange={(e) => setSanctionImgur(e.target.value)} placeholder="https://imgur.com/..." /></div><div><div className="text-sm text-white/72">Ok</div><textarea className="mt-2 min-h-[110px] w-full rounded-2xl border px-3 py-2.5 text-sm" value={sanctionReason} onChange={(e) => setSanctionReason(e.target.value)} placeholder="Írd le röviden az okot..." /></div></div>}
+        {type === "inactivity" && <div className="mt-5 grid gap-4 lg:grid-cols-2"><div><div className="text-sm text-white/72">Mettől</div><input type="date" className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm" value={inactiveFrom} onChange={(e) => setInactiveFrom(e.target.value)} /></div><div><div className="text-sm text-white/72">Meddig</div><input type="date" className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm" value={inactiveTo} onChange={(e) => setInactiveTo(e.target.value)} /></div></div>}
+        {type === "namechange" && <div className="mt-5 grid gap-4"><div className="grid gap-4 lg:grid-cols-2"><div><div className="text-sm text-white/72">Előző neved</div><input className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm" value={oldName} onChange={(e) => setOldName(e.target.value)} placeholder="Pl. Kovács Béla" /></div><div><div className="text-sm text-white/72">Új neved</div><input className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Pl. Nagy Béla" /></div></div><div><div className="text-sm text-white/72">Indok</div><textarea className="mt-2 min-h-[110px] w-full rounded-2xl border px-3 py-2.5 text-sm" value={nameReason} onChange={(e) => setNameReason(e.target.value)} placeholder="Miért szeretnél nevet váltani?" /></div></div>}
 
-        {type === "inactivity" && (
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <div>
-              <div className="text-sm opacity-80">Mettől</div>
-              <input
-                type="date"
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
-                value={inactiveFrom}
-                onChange={(e) => setInactiveFrom(e.target.value)}
-              />
-            </div>
-            <div>
-              <div className="text-sm opacity-80">Meddig</div>
-              <input
-                type="date"
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
-                value={inactiveTo}
-                onChange={(e) => setInactiveTo(e.target.value)}
-              />
-            </div>
-          </div>
-        )}
-
-        {type === "namechange" && (
-          <div className="mt-4 grid gap-3">
-            <div className="grid gap-3 lg:grid-cols-2">
-              <div>
-                <div className="text-sm opacity-80">Előző neved</div>
-                <input
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
-                  value={oldName}
-                  onChange={(e) => setOldName(e.target.value)}
-                  placeholder="Pl. Kovács Béla"
-                />
-              </div>
-              <div>
-                <div className="text-sm opacity-80">Új neved</div>
-                <input
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Pl. Nagy Béla"
-                />
-              </div>
-            </div>
-            <div>
-              <div className="text-sm opacity-80">Indok</div>
-              <textarea
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm min-h-[90px]"
-                value={nameReason}
-                onChange={(e) => setNameReason(e.target.value)}
-                placeholder="Miért szeretnél nevet váltani?"
-              />
-            </div>
-          </div>
-        )}
-
-        <button
-          onClick={submit}
-          disabled={busy || !token}
-          className="mt-6 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold hover:bg-red-500 disabled:opacity-50"
-        >
-          {busy ? "..." : "Ticket leadása"}
-        </button>
-      </div>
+        <div className="mt-6"><button onClick={submit} disabled={busy || !token} className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm font-medium">{busy ? "..." : "Ticket leadása"}</button></div>
+      </section>
     </div>
   );
 }

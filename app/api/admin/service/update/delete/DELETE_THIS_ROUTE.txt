@@ -1,0 +1,12 @@
+Ezt a mappát töröld a projektből:
+
+app/api/admin/service/update/delete/
+
+Ok:
+- hibás route struktúra
+- duplikálja a helyes delete route-ot
+- a helyes fájl már létezik itt:
+  app/api/admin/service/delete/route.ts
+
+Törlendő fájl:
+app/api/admin/service/update/delete/route.ts

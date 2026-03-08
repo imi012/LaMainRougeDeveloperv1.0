@@ -1,59 +1,81 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-
-function getBearerToken(req: Request) {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!auth) return null;
-  const m = auth.match(/^Bearer\s+(.+)$/i);
-  return m?.[1]?.trim() || null;
-}
+import { createAdminClient } from "../../../../../lib/supabase/admin";
+import { requireLeadership } from "../../_guard";
 
 export async function POST(req: Request) {
   try {
-    const token = getBearerToken(req);
-    if (!token) return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
+    const auth = await requireLeadership(req);
+    if (!auth.ok) {
+      return NextResponse.json({ ok: false, message: auth.message }, { status: auth.status });
+    }
 
     const body = await req.json().catch(() => null);
     const user_id = body?.user_id;
     if (!user_id) return NextResponse.json({ ok: false, message: "Hiányzó user_id." }, { status: 400 });
 
     const admin = createAdminClient();
+    const actorId = auth.userId;
 
-    // Token -> actor
-    const { data: userRes, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userRes?.user) {
-      return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
-    }
-    const actorId = userRes.user.id;
-
-    // jogosultság
-    const { data: actorProfile } = await admin
-      .from("profiles")
-      .select("site_role,status")
-      .eq("user_id", actorId)
-      .maybeSingle();
-
-    const allowed =
-      actorProfile?.site_role === "owner" ||
-      actorProfile?.site_role === "admin" ||
-      actorProfile?.status === "leadership";
-
-    if (!allowed) return NextResponse.json({ ok: false, message: "Nincs jogosultság." }, { status: 403 });
-
-    // warnings
-    const warningsRes = await admin
-      .from("warnings")
-      .select("id,reason,issued_at,expires_at,issued_by,is_active")
-      .eq("user_id", user_id)
-      .order("issued_at", { ascending: false })
-      .limit(50);
+    const [profileRes, warningsRes, leadandoRes, ticketsRes, serviceRes, loreRes, blacklistRes, eventFeedbackRes, tgfNoteRes] =
+      await Promise.all([
+        admin
+          .from("profiles")
+          .select("discord_name,created_at")
+          .eq("user_id", user_id)
+          .maybeSingle(),
+        admin
+          .from("warnings")
+          .select("id,reason,issued_at,expires_at,issued_by,is_active")
+          .eq("user_id", user_id)
+          .order("issued_at", { ascending: false })
+          .limit(50),
+        admin
+          .from("leadando_submissions")
+          .select("id,imgur_url,weeks,submitted_at,is_approved,approved_at,approved_by,approved_until")
+          .eq("user_id", user_id)
+          .order("submitted_at", { ascending: false })
+          .limit(50),
+        admin
+          .from("tickets")
+          .select(
+            "id,type,status,created_at,updated_at,title,description,sanction_imgur_url,sanction_reason,inactivity_from,inactivity_to,old_name,new_name,namechange_reason"
+          )
+          .eq("user_id", user_id)
+          .order("created_at", { ascending: false })
+          .limit(200),
+        admin
+          .from("service_requests")
+          .select(
+            "id,title,description,status,created_at,updated_at,vehicle_type,plate,event_name,amount,imgur_url,reviewed_at,reviewed_by"
+          )
+          .eq("user_id", user_id)
+          .order("created_at", { ascending: false })
+          .limit(200),
+        admin
+          .from("lore_submissions")
+          .select("id,discord_name,pastebin_url,lore_url,submitted_at,is_approved,approved_at,approved_by")
+          .eq("user_id", user_id)
+          .order("submitted_at", { ascending: false })
+          .limit(100),
+        admin.from("blacklist_entries").select("id").eq("user_id", user_id).limit(1),
+        admin.from("event_participants").select("event_id,attended,was_online,pending_feedback").eq("user_id", user_id),
+        admin
+          .from("tgf_notes")
+          .select("id,user_id,notes,created_at,updated_at,created_by,updated_by")
+          .eq("user_id", user_id)
+          .maybeSingle(),
+      ]);
 
     if (warningsRes.error) {
       console.error("detail warnings error:", warningsRes.error);
       return NextResponse.json({ ok: false, message: "Warnings betöltési hiba." }, { status: 500 });
     }
 
-    // ✅ Lejárt figyelmeztetések automatikus inaktiválása
+    if (leadandoRes.error) {
+      console.error("detail leadando error:", leadandoRes.error);
+      return NextResponse.json({ ok: false, message: "Leadandó betöltési hiba." }, { status: 500 });
+    }
+
     const now = Date.now();
     const expiredIds =
       (warningsRes.data ?? [])
@@ -75,50 +97,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // leadandó
-    const leadandoRes = await admin
-      .from("leadando_submissions")
-      .select("id,imgur_url,weeks,submitted_at,is_approved,approved_at,approved_by")
-      .eq("user_id", user_id)
-      .order("submitted_at", { ascending: false })
-      .limit(50);
-
-    if (leadandoRes.error) {
-      console.error("detail leadando error:", leadandoRes.error);
-      return NextResponse.json({ ok: false, message: "Leadandó betöltési hiba." }, { status: 500 });
-    }
-
-    // tickets
-    const ticketsRes = await admin
-      .from("tickets")
-      .select(
-        "id,type,status,created_at,updated_at,title,description,sanction_imgur_url,sanction_reason,inactivity_from,inactivity_to,old_name,new_name,namechange_reason"
-      )
-      .eq("user_id", user_id)
-      .order("created_at", { ascending: false })
-      .limit(200);
-
-    // service requests
-    const serviceRes = await admin
-      .from("service_requests")
-      .select("id,title,description,status,created_at,updated_at")
-      .eq("user_id", user_id)
-      .order("created_at", { ascending: false })
-      .limit(200);
-
-    // lore
-    const loreRes = await admin
-      .from("lore_submissions")
-      .select("id,lore_url,submitted_at,is_approved,approved_at,approved_by")
-      .eq("user_id", user_id)
-      .order("submitted_at", { ascending: false })
-      .limit(100);
-
+    const profileRow = profileRes.data ?? null;
     const rawTickets = ticketsRes.error ? [] : ticketsRes.data ?? [];
     const service_requests = serviceRes.error ? [] : serviceRes.data ?? [];
     const lore = loreRes.error ? [] : loreRes.data ?? [];
 
-    // ✅ Ticketek egységesítése: payload + (opcionális) imgur_url
     const tickets = rawTickets.map((t: any) => {
       const type = (t.type || "").toString();
 
@@ -133,7 +116,7 @@ export async function POST(req: Request) {
         };
       }
 
-      if (type === "inaktivitas") {
+      if (type === "inaktivitas" || type === "inactivity") {
         return {
           ...t,
           payload: {
@@ -154,9 +137,35 @@ export async function POST(req: Request) {
         };
       }
 
-      // default
       return { ...t, payload: t.payload ?? null };
     });
+
+    const rawEventFeedback = eventFeedbackRes.error ? [] : eventFeedbackRes.data ?? [];
+    const eventIds = Array.from(new Set(rawEventFeedback.map((row: any) => row.event_id).filter(Boolean)));
+
+    let eventNameMap = new Map<string, string>();
+    if (eventIds.length > 0) {
+      const { data: eventRows, error: eventNamesErr } = await admin
+        .from("events")
+        .select("id,name,created_at")
+        .in("id", eventIds);
+
+      if (eventNamesErr) {
+        console.error("detail event names error:", eventNamesErr);
+      } else {
+        eventNameMap = new Map((eventRows ?? []).map((row: any) => [row.id, row.name ?? "—"]));
+      }
+    }
+
+    const event_feedbacks = rawEventFeedback
+      .filter((row: any) => row.pending_feedback)
+      .map((row: any) => ({
+        event_id: row.event_id,
+        event_name: eventNameMap.get(row.event_id) ?? "—",
+        attended: !!row.attended,
+        was_online: !!row.was_online,
+        pending_feedback: row.pending_feedback,
+      }));
 
     const openTickets = tickets.filter((t: any) => t.status === "open" || t.status === "in_progress").length;
     const pendingService = service_requests.filter((s: any) => s.status === "pending").length;
@@ -170,6 +179,7 @@ export async function POST(req: Request) {
       tickets,
       service_requests,
       lore,
+      event_feedbacks,
       summary: {
         open_tickets: openTickets,
         total_tickets: tickets.length,
@@ -178,7 +188,12 @@ export async function POST(req: Request) {
         lore_submitted: !!lastLore,
         lore_approved: lastLore ? !!lastLore.is_approved : false,
         last_leadando_submitted: lastLeadando ? lastLeadando.submitted_at : null,
+        discord_name: profileRow?.discord_name ?? lastLore?.discord_name ?? null,
+        joined_at: profileRow?.created_at ?? null,
+        is_blacklisted: (blacklistRes.data ?? []).length > 0,
+        pending_event_feedback_count: event_feedbacks.length,
       },
+      tgf_note: tgfNoteRes.error ? null : tgfNoteRes.data ?? null,
     });
   } catch (e: any) {
     console.error("admin users/detail fatal:", e);

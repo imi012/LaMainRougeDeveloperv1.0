@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireLeadership } from "../../_guard";
+import { writeAdminAuditLog } from "@/lib/admin/audit";
 
 export async function POST(req: Request) {
   const auth = await requireLeadership(req);
@@ -24,6 +25,14 @@ export async function POST(req: Request) {
     console.error("invite revoke error:", error);
     return NextResponse.json({ ok: false, message: "Nem sikerült visszavonni." }, { status: 500 });
   }
+
+  await writeAdminAuditLog({
+    actor_user_id: auth.userId,
+    action: "invite_revoke",
+    target_type: "invite_code",
+    target_id: String(id),
+    details: { id },
+  });
 
   return NextResponse.json({ ok: true });
 }

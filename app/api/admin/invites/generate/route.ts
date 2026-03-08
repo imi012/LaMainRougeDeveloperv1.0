@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireLeadership } from "../../_guard";
+import { writeAdminAuditLog } from "@/lib/admin/audit";
 
 function sha256(text: string) {
   return crypto.createHash("sha256").update(text).digest("hex");
@@ -35,5 +36,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "Nem sikerült létrehozni a kódot." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, code, expires_at: expiresAt });
+  await writeAdminAuditLog({
+    actor_user_id: auth.userId,
+    action: "invite_generate",
+    target_type: "invite_code",
+    target_label: code,
+    details: { expires_at: expiresAt, max_uses: 1 },
+  });
+
+  return NextResponse.json({ ok: true, invite: { code, expires_at: expiresAt } });
 }

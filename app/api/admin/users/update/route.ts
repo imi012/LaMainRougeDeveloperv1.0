@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-function getBearerToken(req: Request) {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!auth) return null;
-  const m = auth.match(/^Bearer\s+(.+)$/i);
-  return m?.[1]?.trim() || null;
-}
+import { writeAdminAuditLog } from "@/lib/admin/audit";
+import { requireLeadership } from "@/app/api/admin/_guard";
 
 type PatchBody = {
   user_id?: string;
@@ -31,8 +26,10 @@ function pickAllowedPatch(body: PatchBody) {
 
 export async function POST(req: Request) {
   try {
-    const token = getBearerToken(req);
-    if (!token) return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
+    const auth = await requireLeadership(req);
+    if (!auth.ok) {
+      return NextResponse.json({ ok: false, message: auth.message }, { status: auth.status });
+    }
 
     const body = (await req.json().catch(() => null)) as PatchBody | null;
     if (!body?.user_id) {
@@ -40,35 +37,17 @@ export async function POST(req: Request) {
     }
 
     const admin = createAdminClient();
-
-    // Token -> user
-    const { data: userRes, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userRes?.user) {
-      return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
-    }
-    const actorId = userRes.user.id;
-
-    // Jogosultság ellenőrzés (admin/owner/leadership)
-    const { data: actorProfile, error: actorProfileErr } = await admin
-      .from("profiles")
-      .select("site_role,status")
-      .eq("user_id", actorId)
-      .maybeSingle();
-
-    if (actorProfileErr || !actorProfile) {
-      return NextResponse.json({ ok: false, message: "Nincs jogosultság (profil hiba)." }, { status: 403 });
-    }
-
-    const allowed =
-      actorProfile.site_role === "owner" ||
-      actorProfile.site_role === "admin" ||
-      actorProfile.status === "leadership";
-
-    if (!allowed) {
-      return NextResponse.json({ ok: false, message: "Nincs jogosultság." }, { status: 403 });
-    }
-
     const patch = pickAllowedPatch(body);
+
+    if ("site_role" in patch && auth.profile.site_role !== "owner") {
+      return NextResponse.json({ ok: false, message: "Webjogot csak owner módosíthat." }, { status: 403 });
+    }
+
+    const { data: targetBefore } = await admin
+      .from("profiles")
+      .select("ic_name,status,site_role,rank_id")
+      .eq("user_id", body.user_id)
+      .maybeSingle();
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ ok: false, message: "Nincs frissítendő mező." }, { status: 400 });
@@ -80,6 +59,15 @@ export async function POST(req: Request) {
       console.error("admin users/update error:", upErr);
       return NextResponse.json({ ok: false, message: "Nem sikerült menteni." }, { status: 500 });
     }
+
+    await writeAdminAuditLog({
+      actor_user_id: auth.userId,
+      action: "user_update",
+      target_type: "profile",
+      target_id: body.user_id,
+      target_label: targetBefore?.ic_name ?? null,
+      details: { before: targetBefore ?? null, patch },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

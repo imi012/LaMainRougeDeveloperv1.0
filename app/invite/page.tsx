@@ -1,24 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
 export default function InvitePage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
 
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    // Ha nincs user -> login
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (error || !data.user) router.replace("/login");
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let mounted = true;
+
+    async function checkUser() {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (!mounted) return;
+
+        const hasSession = !!data.session?.access_token;
+        if (error || !hasSession) {
+          setIsLoggedIn(false);
+          router.replace("/login");
+          return;
+        }
+
+        setIsLoggedIn(true);
+      } finally {
+        if (mounted) setCheckingAuth(false);
+      }
+    }
+
+    checkUser();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router, supabase]);
 
   async function redeem(e: React.FormEvent) {
     e.preventDefault();
@@ -33,9 +55,22 @@ export default function InvitePage() {
     }
 
     try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      const token = session?.access_token;
+      if (sessionError || !token) {
+        throw new Error("Nincs bejelentkezve.");
+      }
+
       const res = await fetch("/api/invite/redeem", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ code: trimmed }),
       });
 
@@ -45,8 +80,8 @@ export default function InvitePage() {
         throw new Error(json.message || "Hiba történt a kód beváltásakor.");
       }
 
-      // Siker: vissza az appba (guard majd eldönti TGF/active)
       router.push("/app");
+      router.refresh();
     } catch (err: any) {
       setMsg(err?.message ?? "Hiba történt.");
     } finally {
@@ -71,19 +106,21 @@ export default function InvitePage() {
           <label className="text-sm opacity-80">Meghívókód</label>
           <input
             className="rounded-lg border bg-transparent p-3"
-            placeholder="Pl.: LMR-9F3K-2Q7P"
+            placeholder="Pl.: 399222"
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
 
           <button
-            disabled={loading || code.trim().length < 6}
-            className="rounded-xl border px-4 py-3 font-semibold"
+            disabled={checkingAuth || loading || code.trim().length < 6 || !isLoggedIn}
+            className="rounded-xl border px-4 py-3 font-semibold disabled:opacity-50"
           >
             {loading ? "..." : "Kód beváltása"}
           </button>
 
           {msg && <p className="text-sm opacity-80">{msg}</p>}
+          {!msg && checkingAuth && <p className="text-sm opacity-80">Bejelentkezés ellenőrzése...</p>}
+          {!msg && !checkingAuth && !isLoggedIn && <p className="text-sm opacity-80">Nincs bejelentkezve.</p>}
         </form>
 
         <div className="mt-6 flex items-center justify-between text-xs opacity-70">

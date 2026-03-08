@@ -10,7 +10,15 @@ export type MenuSection = {
   items: MenuItem[];
 };
 
-function memberBaseMenu(): MenuSection[] {
+export type MenuOptions = {
+  showEvents?: boolean;
+  showLeadership?: boolean;
+  showAuditLog?: boolean;
+};
+
+function memberBaseMenu(options?: MenuOptions): MenuSection[] {
+  const showEvents = !!options?.showEvents;
+
   return [
     { items: [{ label: "Profil", href: "/app/profile" }] },
     {
@@ -18,7 +26,7 @@ function memberBaseMenu(): MenuSection[] {
       items: [
         { label: "Tagok", href: "/app/tagok" },
         { label: "Akciók", href: "/app/akciok" },
-        { label: "Események", href: "/app/esemenyek" },
+        ...(showEvents ? [{ label: "Események", href: "/app/esemenyek" }] : []),
       ],
     },
     {
@@ -29,7 +37,6 @@ function memberBaseMenu(): MenuSection[] {
         { label: "Szereltetés igénylés", href: "/app/szereltetes" },
         { label: "Leadandó", href: "/app/leadando" },
         { label: "Karaktertörténet", href: "/app/karaktertortenet" },
-        // ✅ marad /app/ticketek
         { label: "Ticketek", href: "/app/ticketek" },
         { label: "Parkolási rend", href: "/app/parkolas" },
         { label: "Skinek", href: "/app/skinek" },
@@ -37,15 +44,12 @@ function memberBaseMenu(): MenuSection[] {
     },
     {
       title: "Információ",
-      items: [
-        { label: "Frakció szabályzat", href: "/app/szabalyzat" },
-        { label: "Tagfelvétel", href: "/app/tagfelvetel" },
-      ],
+      items: [{ label: "Frakció szabályzat", href: "/app/szabalyzat" }],
     },
   ];
 }
 
-export function getMenuFor(view: AppView): MenuSection[] {
+export function getMenuFor(view: AppView, options?: MenuOptions): MenuSection[] {
   if (view === "tgf") {
     return [
       { items: [{ label: "Profil", href: "/app/profile" }] },
@@ -54,10 +58,7 @@ export function getMenuFor(view: AppView): MenuSection[] {
         items: [
           { label: "Helyszín", href: "/app/helyszin" },
           { label: "Skinek", href: "/app/skinek" },
-          { label: "Karakter útmutató", href: "/app/karakter-utmutato" },
           { label: "Karaktertörténet", href: "/app/karaktertortenet" },
-          // ✅ Ticketek TGF-ben is
-          { label: "Ticketek", href: "/app/ticketek" },
           { label: "Frakció szabályzat", href: "/app/szabalyzat" },
         ],
       },
@@ -65,50 +66,23 @@ export function getMenuFor(view: AppView): MenuSection[] {
   }
 
   if (view === "member") {
-    return [
-      { items: [{ label: "Profil", href: "/app/profile" }] },
-      {
-        title: "Alap",
-        items: [
-          { label: "Tagok", href: "/app/tagok" },
-          { label: "Akciók", href: "/app/akciok" },
-          { label: "Események", href: "/app/esemenyek" },
-        ],
-      },
-      {
-        title: "Frakció",
-        items: [
-          { label: "Rangok", href: "/app/rangok" },
-          { label: "Járművek", href: "/app/jarmuvek" },
-          { label: "Szereltetés igénylés", href: "/app/szereltetes" },
-          { label: "Leadandó", href: "/app/leadando" },
-          { label: "Karaktertörténet", href: "/app/karaktertortenet" },
-          { label: "Ticketek", href: "/app/ticketek" },
-          { label: "Parkolási rend", href: "/app/parkolas" },
-          { label: "Skinek", href: "/app/skinek" },
-        ],
-      },
-      {
-        title: "Információ",
-        items: [
-          { label: "Frakció szabályzat", href: "/app/szabalyzat" },
-          { label: "Vezetőség", href: "/app/vezetoseg" },
-          { label: "Tagfelvétel", href: "/app/tagfelvetel" },
-        ],
-      },
-    ];
+    return memberBaseMenu(options);
   }
 
-  // leadership
-  return [
-    ...memberBaseMenu(),
+  const sections: MenuSection[] = [
+    ...memberBaseMenu({ showEvents: true }),
     {
       title: "Vezetőség",
-      items: [
-        { label: "Kezelőpanel", href: "/app/vezetoseg" },
-        { label: "Meghívókódok", href: "/app/vezetoseg?tab=invites" },
-        { label: "Felhasználók", href: "/app/vezetoseg?tab=users" },
-      ],
+      items: [{ label: "Kezelőpanel", href: "/app/vezetoseg" }],
     },
   ];
+
+  if (options?.showAuditLog) {
+    sections.push({
+      title: "Admin",
+      items: [{ label: "Audit log", href: "/app/audit-log" }],
+    });
+  }
+
+  return sections;
 }

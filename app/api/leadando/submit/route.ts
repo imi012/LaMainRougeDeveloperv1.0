@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-function getBearerToken(req: Request) {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!auth) return null;
-  const m = auth.match(/^Bearer\s+(.+)$/i);
-  return m?.[1]?.trim() || null;
-}
+import { requireAppUser } from "@/lib/server/app-auth";
 
 export async function POST(req: Request) {
-  const token = getBearerToken(req);
-  if (!token) return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
+  const auth = await requireAppUser(req, {
+    requireMember: true,
+    allowPending: false,
+  });
+
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, message: auth.message }, { status: auth.status });
+  }
 
   const body = await req.json().catch(() => null);
   const imgur_url = (body?.imgur_url ?? "").toString().trim();
@@ -25,18 +25,10 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient();
 
-  // Token -> user
-  const { data: userRes, error: userErr } = await admin.auth.getUser(token);
-  if (userErr || !userRes?.user) {
-    return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
-  }
-
-  const user_id = userRes.user.id;
-
   const { data, error } = await admin
     .from("leadando_submissions")
     .insert({
-      user_id,
+      user_id: auth.userId,
       imgur_url,
       weeks,
       submitted_at: new Date().toISOString(),
