@@ -31,17 +31,12 @@ type WarningRow = {
   is_active: boolean;
 };
 
-type EditorCorner = "nw" | "ne" | "sw" | "se";
-
-type EditorImageState = {
-  x: number;
-  y: number;
+type EditorImageInfo = {
+  src: string;
   width: number;
   height: number;
+  extension: string;
 };
-
-const AVATAR_EDITOR_SIZE = 320;
-const AVATAR_UPLOAD_SIZE = 512;
 
 function ymd(iso: string | null | undefined) {
   if (!iso) return "—";
@@ -55,51 +50,15 @@ function ymd(iso: string | null | undefined) {
   return `${yyyy}.${mm}.${dd}`;
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.min(Math.max(n, min), max);
+function fileExt(name: string) {
+  const parts = name.split(".");
+  if (parts.length < 2) return "png";
+  return parts[parts.length - 1].toLowerCase();
 }
 
-function createCoverState(naturalWidth: number, naturalHeight: number): EditorImageState {
-  const scale = Math.max(
-    AVATAR_EDITOR_SIZE / naturalWidth,
-    AVATAR_EDITOR_SIZE / naturalHeight
-  );
-
-  const width = naturalWidth * scale;
-  const height = naturalHeight * scale;
-
-  return {
-    x: (AVATAR_EDITOR_SIZE - width) / 2,
-    y: (AVATAR_EDITOR_SIZE - height) / 2,
-    width,
-    height,
-  };
-}
-
-function clampEditorState(
-  next: EditorImageState,
-  naturalWidth: number,
-  naturalHeight: number
-): EditorImageState {
-  const aspect = naturalWidth / naturalHeight;
-  const minWidth = Math.max(AVATAR_EDITOR_SIZE, AVATAR_EDITOR_SIZE * aspect);
-  const maxWidth = Math.max(minWidth, naturalWidth * 3);
-
-  const width = clamp(next.width, minWidth, maxWidth);
-  const height = width / aspect;
-
-  const minX = AVATAR_EDITOR_SIZE - width;
-  const maxX = 0;
-  const minY = AVATAR_EDITOR_SIZE - height;
-  const maxY = 0;
-
-  return {
-    width,
-    height,
-    x: clamp(next.x, minX, maxX),
-    y: clamp(next.y, minY, maxY),
-  };
-}
+const EDITOR_SIZE = 320;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 4;
 
 export default function ProfilePage() {
   const supabase = createClient();
@@ -114,38 +73,25 @@ export default function ProfilePage() {
   const [rankMissing, setRankMissing] = useState(false);
 
   const [bioDraft, setBioDraft] = useState("");
+  const [editingBio, setEditingBio] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const [warnings, setWarnings] = useState<WarningRow[]>([]);
-  const [actionsCount, setActionsCount] = useState(0);
-  const [eventsCount, setEventsCount] = useState(0);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
-  const [avatarEditorImageUrl, setAvatarEditorImageUrl] = useState<string | null>(null);
-  const [avatarEditorImageName, setAvatarEditorImageName] = useState<string>("avatar.png");
-  const [avatarNaturalSize, setAvatarNaturalSize] = useState({ width: 0, height: 0 });
-  const [avatarEditorState, setAvatarEditorState] = useState<EditorImageState | null>(null);
-  const avatarLoadedImageRef = useRef<HTMLImageElement | null>(null);
-  const avatarObjectUrlRef = useRef<string | null>(null);
-  const dragStateRef = useRef<
-    | {
-        mode: "move";
-        startX: number;
-        startY: number;
-        initial: EditorImageState;
-      }
-    | {
-        mode: EditorCorner;
-        startX: number;
-        startY: number;
-        initial: EditorImageState;
-      }
-    | null
-  >(null);
+  const [editorImage, setEditorImage] = useState<EditorImageInfo | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorZoom, setEditorZoom] = useState(1);
+  const [editorX, setEditorX] = useState(0);
+  const [editorY, setEditorY] = useState(0);
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [draggingImage, setDraggingImage] = useState(false);
+  const [draggingCorner, setDraggingCorner] = useState(false);
+
+  const dragStartRef = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
+  const resizeStartRef = useRef<{ x: number; y: number; startZoom: number } | null>(null);
 
   const isLeadership = useMemo(() => isLeadershipProfile(me), [me]);
   const isSelf = useMemo(() => !!me && !!profile && me.user_id === profile.user_id, [me, profile]);
@@ -162,6 +108,21 @@ export default function ProfilePage() {
 
   const canSeeStats = useMemo(() => isSelf || isLeadership, [isSelf, isLeadership]);
   const canSeeWarnings = useMemo(() => isSelf || isLeadership, [isSelf, isLeadership]);
+
+  const baseCoverScale = useMemo(() => {
+    if (!editorImage) return 1;
+    return Math.max(EDITOR_SIZE / editorImage.width, EDITOR_SIZE / editorImage.height);
+  }, [editorImage]);
+
+  const renderedImageWidth = useMemo(() => {
+    if (!editorImage) return EDITOR_SIZE;
+    return editorImage.width * baseCoverScale * editorZoom;
+  }, [editorImage, baseCoverScale, editorZoom]);
+
+  const renderedImageHeight = useMemo(() => {
+    if (!editorImage) return EDITOR_SIZE;
+    return editorImage.height * baseCoverScale * editorZoom;
+  }, [editorImage, baseCoverScale, editorZoom]);
 
   useEffect(() => {
     let cancelled = false;
@@ -228,6 +189,7 @@ export default function ProfilePage() {
       if (!cancelled) {
         setProfile(targetProfile);
         setBioDraft(targetProfile.bio ?? "");
+        setEditingBio(false);
       }
 
       if (targetProfile.rank_id) {
@@ -261,26 +223,11 @@ export default function ProfilePage() {
           .eq("user_id", targetUserId)
           .order("issued_at", { ascending: false });
 
-        const { count: actionCount } = await supabase
-          .from("actions")
-          .select("id", { count: "exact", head: true })
-          .contains("participant_user_ids", [targetUserId]);
-
-        const { count: eventCount } = await supabase
-          .from("event_participants")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", targetUserId)
-          .eq("attended", true);
-
         if (!cancelled) {
           setWarnings((warnData ?? []) as WarningRow[]);
-          setActionsCount(actionCount ?? 0);
-          setEventsCount(eventCount ?? 0);
         }
       } else if (!cancelled) {
         setWarnings([]);
-        setActionsCount(0);
-        setEventsCount(0);
       }
 
       if (!cancelled) {
@@ -288,7 +235,7 @@ export default function ProfilePage() {
       }
     }
 
-    load();
+    void load();
 
     return () => {
       cancelled = true;
@@ -296,86 +243,13 @@ export default function ProfilePage() {
   }, [router, supabase, userParam]);
 
   useEffect(() => {
-    function onPointerMove(event: PointerEvent) {
-      if (!dragStateRef.current || !avatarEditorState) return;
-      if (!avatarNaturalSize.width || !avatarNaturalSize.height) return;
-
-      const deltaX = event.clientX - dragStateRef.current.startX;
-      const deltaY = event.clientY - dragStateRef.current.startY;
-      const initial = dragStateRef.current.initial;
-      const aspect = avatarNaturalSize.width / avatarNaturalSize.height;
-
-      let next: EditorImageState = initial;
-
-      if (dragStateRef.current.mode === "move") {
-        next = {
-          ...initial,
-          x: initial.x + deltaX,
-          y: initial.y + deltaY,
-        };
-      } else {
-        const minWidth = Math.max(AVATAR_EDITOR_SIZE, AVATAR_EDITOR_SIZE * aspect);
-        const maxWidth = Math.max(minWidth, avatarNaturalSize.width * 3);
-        let width = initial.width;
-        let x = initial.x;
-        let y = initial.y;
-
-        if (dragStateRef.current.mode === "se") {
-          width = clamp(initial.width + deltaX, minWidth, maxWidth);
-          x = initial.x;
-          y = initial.y;
-        }
-
-        if (dragStateRef.current.mode === "sw") {
-          width = clamp(initial.width - deltaX, minWidth, maxWidth);
-          x = initial.x + (initial.width - width);
-          y = initial.y;
-        }
-
-        if (dragStateRef.current.mode === "ne") {
-          width = clamp(initial.width + deltaX, minWidth, maxWidth);
-          x = initial.x;
-        }
-
-        if (dragStateRef.current.mode === "nw") {
-          width = clamp(initial.width - deltaX, minWidth, maxWidth);
-          x = initial.x + (initial.width - width);
-        }
-
-        const height = width / aspect;
-
-        if (dragStateRef.current.mode === "ne" || dragStateRef.current.mode === "nw") {
-          y = initial.y + (initial.height - height);
-        }
-
-        next = { x, y, width, height };
-      }
-
-      setAvatarEditorState(
-        clampEditorState(next, avatarNaturalSize.width, avatarNaturalSize.height)
-      );
+    if (!editorOpen) {
+      setDraggingImage(false);
+      setDraggingCorner(false);
+      dragStartRef.current = null;
+      resizeStartRef.current = null;
     }
-
-    function onPointerUp() {
-      dragStateRef.current = null;
-    }
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-  }, [avatarEditorState, avatarNaturalSize.height, avatarNaturalSize.width]);
-
-  useEffect(() => {
-    return () => {
-      if (avatarObjectUrlRef.current) {
-        URL.revokeObjectURL(avatarObjectUrlRef.current);
-      }
-    };
-  }, []);
+  }, [editorOpen]);
 
   async function saveBio() {
     if (!profile || !canEdit) return;
@@ -394,116 +268,146 @@ export default function ProfilePage() {
       setError(upErr.message);
     } else {
       setProfile((prev) => (prev ? { ...prev, bio: nextBio } : prev));
+      setEditingBio(false);
     }
 
     setSaving(false);
   }
 
-  async function openAvatarEditor(file: File) {
+  function cancelBioEdit() {
+    setBioDraft(profile?.bio ?? "");
+    setEditingBio(false);
+  }
+
+  function closeEditor() {
+    setEditorOpen(false);
+    setEditorImage(null);
+    setEditorZoom(1);
+    setEditorX(0);
+    setEditorY(0);
+    setEditorSaving(false);
+  }
+
+  async function handleAvatarFile(file: File) {
     if (!profile || !canEdit) return;
 
     setError(null);
 
-    if (avatarObjectUrlRef.current) {
-      URL.revokeObjectURL(avatarObjectUrlRef.current);
-      avatarObjectUrlRef.current = null;
+    const extension = fileExt(file.name);
+
+    const readerResult = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("A kép beolvasása nem sikerült."));
+      reader.readAsDataURL(file);
+    });
+
+    const imageInfo = await new Promise<EditorImageInfo>((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => {
+        resolve({
+          src: readerResult,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+          extension,
+        });
+      };
+      img.onerror = () => reject(new Error("A kép betöltése nem sikerült."));
+      img.src = readerResult;
+    });
+
+    setEditorImage(imageInfo);
+    setEditorZoom(1);
+    setEditorX(0);
+    setEditorY(0);
+    setEditorOpen(true);
+  }
+
+  function clampZoom(nextZoom: number) {
+    return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+  }
+
+  function onEditorWheel(event: React.WheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const delta = event.deltaY;
+    const nextZoom = clampZoom(editorZoom + (delta > 0 ? -0.08 : 0.08));
+    setEditorZoom(nextZoom);
+  }
+
+  function startImageDrag(clientX: number, clientY: number) {
+    dragStartRef.current = { x: clientX, y: clientY, startX: editorX, startY: editorY };
+    setDraggingImage(true);
+  }
+
+  function startCornerResize(clientX: number, clientY: number) {
+    resizeStartRef.current = { x: clientX, y: clientY, startZoom: editorZoom };
+    setDraggingCorner(true);
+  }
+
+  function onPointerMove(clientX: number, clientY: number) {
+    if (draggingImage && dragStartRef.current) {
+      const dx = clientX - dragStartRef.current.x;
+      const dy = clientY - dragStartRef.current.y;
+      setEditorX(dragStartRef.current.startX + dx);
+      setEditorY(dragStartRef.current.startY + dy);
+      return;
     }
 
-    const objectUrl = URL.createObjectURL(file);
-    avatarObjectUrlRef.current = objectUrl;
-
-    const img = new window.Image();
-    img.onload = () => {
-      avatarLoadedImageRef.current = img;
-      setAvatarNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
-      setAvatarEditorState(createCoverState(img.naturalWidth, img.naturalHeight));
-      setAvatarEditorImageName(file.name || "avatar.png");
-      setAvatarEditorImageUrl(objectUrl);
-      setAvatarEditorOpen(true);
-    };
-    img.onerror = () => {
-      setError("A kép betöltése nem sikerült.");
-      URL.revokeObjectURL(objectUrl);
-      avatarObjectUrlRef.current = null;
-    };
-    img.src = objectUrl;
-  }
-
-  function closeAvatarEditor() {
-    setAvatarEditorOpen(false);
-    setAvatarEditorImageUrl(null);
-    setAvatarEditorImageName("avatar.png");
-    setAvatarEditorState(null);
-    setAvatarNaturalSize({ width: 0, height: 0 });
-    avatarLoadedImageRef.current = null;
-    dragStateRef.current = null;
-
-    if (avatarObjectUrlRef.current) {
-      URL.revokeObjectURL(avatarObjectUrlRef.current);
-      avatarObjectUrlRef.current = null;
+    if (draggingCorner && resizeStartRef.current) {
+      const dx = clientX - resizeStartRef.current.x;
+      const dy = clientY - resizeStartRef.current.y;
+      const distance = (dx + dy) / 280;
+      setEditorZoom(clampZoom(resizeStartRef.current.startZoom + distance));
     }
   }
 
-  function startMove(event: React.PointerEvent<HTMLDivElement>) {
-    if (!avatarEditorState) return;
-    dragStateRef.current = {
-      mode: "move",
-      startX: event.clientX,
-      startY: event.clientY,
-      initial: avatarEditorState,
-    };
-  }
+  async function uploadCroppedAvatar() {
+    if (!profile || !editorImage) return;
 
-  function startResize(corner: EditorCorner, event: React.PointerEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    if (!avatarEditorState) return;
-    dragStateRef.current = {
-      mode: corner,
-      startX: event.clientX,
-      startY: event.clientY,
-      initial: avatarEditorState,
-    };
-  }
-
-  async function saveEditedAvatar() {
-    if (!profile || !canEdit || !avatarLoadedImageRef.current || !avatarEditorState) return;
-
+    setEditorSaving(true);
     setUploading(true);
     setError(null);
 
     try {
+      const sourceImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new window.Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("A kép feldolgozása nem sikerült."));
+        img.src = editorImage.src;
+      });
+
+      const outputSize = 512;
       const canvas = document.createElement("canvas");
-      canvas.width = AVATAR_UPLOAD_SIZE;
-      canvas.height = AVATAR_UPLOAD_SIZE;
+      canvas.width = outputSize;
+      canvas.height = outputSize;
       const ctx = canvas.getContext("2d");
 
       if (!ctx) {
-        setError("A kép mentése nem sikerült.");
-        return;
+        throw new Error("A képszerkesztő nem tudta létrehozni a vásznat.");
       }
 
-      const image = avatarLoadedImageRef.current;
-      const scaleX = image.naturalWidth / avatarEditorState.width;
-      const scaleY = image.naturalHeight / avatarEditorState.height;
+      ctx.clearRect(0, 0, outputSize, outputSize);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(outputSize / 2, outputSize / 2, outputSize / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
 
-      const srcX = Math.max(0, -avatarEditorState.x * scaleX);
-      const srcY = Math.max(0, -avatarEditorState.y * scaleY);
-      const srcW = Math.min(image.naturalWidth - srcX, AVATAR_EDITOR_SIZE * scaleX);
-      const srcH = Math.min(image.naturalHeight - srcY, AVATAR_EDITOR_SIZE * scaleY);
+      const previewToOutput = outputSize / EDITOR_SIZE;
+      const drawWidth = sourceImg.naturalWidth * baseCoverScale * editorZoom * previewToOutput;
+      const drawHeight = sourceImg.naturalHeight * baseCoverScale * editorZoom * previewToOutput;
+      const drawX = outputSize / 2 - drawWidth / 2 + editorX * previewToOutput;
+      const drawY = outputSize / 2 - drawHeight / 2 + editorY * previewToOutput;
 
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(sourceImg, drawX, drawY, drawWidth, drawHeight);
+      ctx.restore();
 
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob((value) => resolve(value), "image/png", 0.95);
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error("A kivágott kép mentése nem sikerült."));
+        }, "image/png");
       });
-
-      if (!blob) {
-        setError("A kép exportálása nem sikerült.");
-        return;
-      }
 
       const path = `${profile.user_id}/avatar.png`;
 
@@ -514,26 +418,30 @@ export default function ProfilePage() {
       });
 
       if (uploadErr) {
-        setError(uploadErr.message);
-        return;
+        throw new Error(uploadErr.message);
       }
 
       const {
         data: { publicUrl },
       } = supabase.storage.from("avatars").getPublicUrl(path);
 
+      const bustUrl = `${publicUrl}${publicUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+
       const { error: profileErr } = await supabase
         .from("profiles")
-        .update({ avatar_url: publicUrl })
+        .update({ avatar_url: bustUrl })
         .eq("user_id", profile.user_id);
 
       if (profileErr) {
-        setError(profileErr.message);
-      } else {
-        setProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : prev));
-        closeAvatarEditor();
+        throw new Error(profileErr.message);
       }
+
+      setProfile((prev) => (prev ? { ...prev, avatar_url: bustUrl } : prev));
+      closeEditor();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "A profilkép mentése nem sikerült.");
     } finally {
+      setEditorSaving(false);
       setUploading(false);
     }
   }
@@ -579,34 +487,36 @@ export default function ProfilePage() {
 
   return (
     <>
-      <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 lg:px-8">
         <div className="space-y-5">
-          <section className="lmr-card rounded-[28px] p-5 md:p-6">
-            <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-              <div>
+          <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
+            <div className="flex min-w-0 flex-col gap-5 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
                 <div className="text-xs uppercase tracking-[0.16em] text-white/45">Profil</div>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+
+                <h1 className="mt-2 break-words text-3xl font-semibold tracking-tight text-white md:text-4xl">
                   {profile.ic_name ?? "Profil"}
                 </h1>
-                <p className="mt-2 max-w-2xl text-sm text-white/65">
+
+                <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-white/65">
                   {canEdit
                     ? "Saját profilodat vagy vezetőségként másét is szerkesztheted."
-                    : "Itt megtekintheted a profil alapadatait."}
+                    : "Itt megtekintheted a profilhoz tartozó adatokat."}
                 </p>
               </div>
 
               {error ? (
-                <div className="rounded-[18px] border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                <div className="max-w-full break-words rounded-[18px] border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                   {error}
                 </div>
               ) : null}
             </div>
 
-            <div className="mt-6 grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
-              <div className="lmr-surface-soft rounded-[28px] p-5">
-                <div className="flex flex-col items-center text-center">
+            <div className="mt-6 grid min-w-0 gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[28px] p-5">
+                <div className="flex min-w-0 flex-col items-center text-center">
                   {avatar ? (
-                    <div className="relative h-36 w-36 overflow-hidden rounded-full border border-white/10 bg-white/5">
+                    <div className="relative h-36 w-36 shrink-0 overflow-hidden rounded-full border border-white/10 bg-white/5">
                       <Image
                         src={avatar}
                         alt="Profilkép"
@@ -617,61 +527,95 @@ export default function ProfilePage() {
                       />
                     </div>
                   ) : (
-                    <div className="flex h-36 w-36 items-center justify-center rounded-full border border-white/10 bg-white/5 text-sm text-white/50">
+                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 text-center text-sm text-white/50">
                       Nincs profilkép
                     </div>
                   )}
 
-                  <div className="mt-4 text-xl font-semibold text-white">{profile.ic_name ?? "—"}</div>
-                  <div className="mt-2 text-sm text-white/65">
+                  <div className="mt-4 max-w-full break-words text-3xl font-semibold leading-tight text-white">
+                    {profile.ic_name ?? "—"}
+                  </div>
+
+                  <div className="mt-3 max-w-full break-words text-sm leading-6 text-white/65">
                     Rang: {rank?.name ?? (rankMissing ? "Törölt rang" : "—")}
                   </div>
-                  <div className="mt-1 text-sm text-white/55">Státusz: {profile.status ?? "—"}</div>
+
+                  <div className="max-w-full break-words text-sm leading-6 text-white/55">
+                    Státusz: {profile.status ?? "—"}
+                  </div>
 
                   {canEdit ? (
-                    <div className="mt-5 w-full">
-                      <label className="lmr-btn lmr-btn-primary flex w-full cursor-pointer items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-medium">
-                        {uploading ? "Mentés..." : avatar ? "Profilkép szerkesztése" : "Profilkép feltöltése"}
+                    <div className="mt-5 w-full min-w-0">
+                      <label className="lmr-btn lmr-btn-primary flex w-full cursor-pointer items-center justify-center rounded-2xl px-4 py-2.5 text-center text-sm font-medium leading-5">
+                        {uploading ? "Feltöltés..." : "Profilkép feltöltése"}
                         <input
                           type="file"
                           accept="image/*"
                           className="hidden"
                           disabled={uploading}
                           onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              void openAvatarEditor(file);
-                            }
+                            const f = e.target.files?.[0];
+                            if (f) void handleAvatarFile(f);
                             e.currentTarget.value = "";
                           }}
                         />
                       </label>
-                      <div className="mt-2 text-center text-xs text-white/45">Bucket: avatars</div>
+
+                      <div className="mt-2 break-words text-center text-xs leading-5 text-white/45">
+                        Feltöltés után húzással és görgővel tudod igazítani.
+                      </div>
                     </div>
                   ) : (
-                    <div className="mt-5 text-sm text-white/50">Más profilját csak megtekinteni tudod.</div>
+                    <div className="mt-5 max-w-full break-words text-sm leading-6 text-white/50">
+                      Más profilját csak megtekinteni tudod.
+                    </div>
                   )}
                 </div>
               </div>
 
-              <div className="space-y-5">
-                <section className="lmr-surface-soft rounded-[28px] p-5 md:p-6">
-                  <h2 className="text-xl font-semibold text-white">Profil leírás</h2>
-                  <p className="mt-1 text-sm text-white/60">
-                    Rövid bemutatkozás és személyes profil információ.
-                  </p>
+              <div className="min-w-0 space-y-5">
+                <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <h2 className="break-words text-xl font-semibold text-white">Profil leírás</h2>
+                      <p className="mt-1 break-words text-sm leading-6 text-white/60">
+                        Rövid bemutatkozás és személyes profil információ.
+                      </p>
+                    </div>
 
-                  {canEdit ? (
+                    {canEdit && !editingBio ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingBio(true)}
+                        className="lmr-btn lmr-btn-primary shrink-0 rounded-2xl px-4 py-2.5 text-sm font-medium"
+                      >
+                        Szerkesztés
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {canEdit && editingBio ? (
                     <>
                       <textarea
                         value={bioDraft}
                         onChange={(e) => setBioDraft(e.target.value)}
                         placeholder="Írj magadról pár sort..."
                         rows={8}
-                        className="mt-4 min-h-[180px] w-full rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-white/20"
+                        className="mt-4 block min-h-[180px] w-full resize-y rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-white/20"
                       />
-                      <div className="mt-4 flex justify-end">
+
+                      <div className="mt-4 flex flex-wrap justify-end gap-3">
                         <button
+                          type="button"
+                          className="lmr-btn rounded-2xl px-4 py-2.5 text-sm font-medium"
+                          onClick={cancelBioEdit}
+                          disabled={saving}
+                        >
+                          Mégse
+                        </button>
+
+                        <button
+                          type="button"
                           className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm font-medium disabled:opacity-60"
                           onClick={() => void saveBio()}
                           disabled={saving}
@@ -681,49 +625,47 @@ export default function ProfilePage() {
                       </div>
                     </>
                   ) : (
-                    <div className="mt-4 whitespace-pre-wrap rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4 text-white/85">
-                      {profile.bio?.trim() ? profile.bio : "—"}
+                    <div className="mt-4 overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4 text-white/85">
+                      <p className="break-words whitespace-pre-wrap leading-7">
+                        {profile.bio?.trim() ? profile.bio : "—"}
+                      </p>
                     </div>
                   )}
                 </section>
 
                 {canSeeStats ? (
-                  <section className="lmr-surface-soft rounded-[28px] p-5 md:p-6">
-                    <h2 className="text-xl font-semibold text-white">Statisztika</h2>
-                    <p className="mt-1 text-sm text-white/60">
-                      A részt vett események, akciók és figyelmeztetések áttekintése.
+                  <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
+                    <h2 className="break-words text-xl font-semibold text-white">Statisztika</h2>
+                    <p className="mt-1 break-words text-sm leading-6 text-white/60">
+                      A profilhoz tartozó alap statisztikák áttekintése.
                     </p>
 
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
-                        <div className="text-xs uppercase tracking-[0.14em] text-white/52">Felvéve</div>
-                        <div className="mt-2 text-lg font-semibold text-white">{ymd(profile.created_at)}</div>
+                    <div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-2">
+                      <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4">
+                        <div className="break-words text-xs uppercase tracking-[0.12em] text-white/52">
+                          Felvéve
+                        </div>
+                        <div className="mt-2 break-words text-lg font-semibold leading-tight text-white">
+                          {ymd(profile.created_at)}
+                        </div>
                       </div>
 
-                      <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
-                        <div className="text-xs uppercase tracking-[0.14em] text-white/52">
+                      <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4">
+                        <div className="break-words text-xs uppercase tracking-[0.12em] text-white/52">
                           Aktív figyelmeztetések
                         </div>
-                        <div className="mt-2 text-lg font-semibold text-white">{warningsActiveCount}</div>
-                      </div>
-
-                      <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
-                        <div className="text-xs uppercase tracking-[0.14em] text-white/52">Események</div>
-                        <div className="mt-2 text-lg font-semibold text-white">{eventsCount}</div>
-                      </div>
-
-                      <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
-                        <div className="text-xs uppercase tracking-[0.14em] text-white/52">Akciók</div>
-                        <div className="mt-2 text-lg font-semibold text-white">{actionsCount}</div>
+                        <div className="mt-2 break-words text-lg font-semibold leading-tight text-white">
+                          {warningsActiveCount}
+                        </div>
                       </div>
                     </div>
                   </section>
                 ) : null}
 
                 {canSeeWarnings ? (
-                  <section className="lmr-surface-soft rounded-[28px] p-5 md:p-6">
-                    <h2 className="text-xl font-semibold text-white">Figyelmeztetések</h2>
-                    <p className="mt-1 text-sm text-white/60">
+                  <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
+                    <h2 className="break-words text-xl font-semibold text-white">Figyelmeztetések</h2>
+                    <p className="mt-1 break-words text-sm leading-6 text-white/60">
                       Részletes lista a korábbi és aktív figyelmeztetésekről.
                     </p>
 
@@ -733,16 +675,17 @@ export default function ProfilePage() {
                       </div>
                     ) : (
                       <div className="mt-4 grid gap-3">
-                        {warnings.map((warning) => (
+                        {warnings.map((w) => (
                           <div
-                            key={warning.id}
-                            className="rounded-[24px] border border-white/8 bg-white/[0.03] p-4"
+                            key={w.id}
+                            className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4"
                           >
-                            <div className="font-semibold text-white">{warning.reason}</div>
-                            <div className="mt-2 text-xs text-white/62">
-                              Kiállítva: {ymd(warning.issued_at)} • Lejárat:{" "}
-                              {warning.expires_at ? ymd(warning.expires_at) : "—"} • Állapot:{" "}
-                              {warning.is_active ? "Aktív" : "Inaktív"}
+                            <div className="break-words text-base font-semibold leading-7 text-white">
+                              {w.reason}
+                            </div>
+                            <div className="mt-2 break-words text-xs leading-6 text-white/62">
+                              Kiállítva: {ymd(w.issued_at)} • Lejárat: {w.expires_at ? ymd(w.expires_at) : "—"} •
+                              Állapot: {w.is_active ? "Aktív" : "Inaktív"}
                             </div>
                           </div>
                         ))}
@@ -756,113 +699,109 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {avatarEditorOpen && avatarEditorImageUrl && avatarEditorState ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
-          <div className="w-full max-w-3xl rounded-[28px] border border-white/10 bg-[#0b0b12] p-5 shadow-2xl md:p-6">
-            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+      {editorOpen && editorImage ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-2xl rounded-[28px] border border-white/10 bg-[#111111] p-5 shadow-2xl md:p-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h2 className="text-2xl font-semibold text-white">Profilkép szerkesztése</h2>
+                <h2 className="text-xl font-semibold text-white">Profilkép igazítása</h2>
                 <p className="mt-1 text-sm text-white/60">
-                  Fogd meg a képet a mozgatáshoz, vagy húzd a sarkait a kerethez igazításhoz, majd mentsd el.
+                  Fogd meg és húzd a képet. A jobb alsó sarokkal vagy az egérgörgővel tudsz nagyítani.
                 </p>
               </div>
-              <div className="text-xs text-white/45">{avatarEditorImageName}</div>
             </div>
 
-            <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_220px]">
-              <div className="flex flex-col items-center gap-4">
-                <div className="relative h-[320px] w-[320px] overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03]">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_58%,rgba(0,0,0,0.55)_59%)] pointer-events-none" />
-                  <div className="pointer-events-none absolute inset-[16px] rounded-full border border-white/25 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+            <div className="mt-5 flex flex-col items-center gap-4">
+              <div
+                className="relative overflow-hidden rounded-full border border-white/15 bg-black/40 shadow-inner"
+                style={{ width: EDITOR_SIZE, height: EDITOR_SIZE }}
+                onWheel={onEditorWheel}
+                onMouseMove={(e) => onPointerMove(e.clientX, e.clientY)}
+                onMouseUp={() => {
+                  setDraggingImage(false);
+                  setDraggingCorner(false);
+                }}
+                onMouseLeave={() => {
+                  setDraggingImage(false);
+                  setDraggingCorner(false);
+                }}
+                onTouchMove={(e) => {
+                  const touch = e.touches[0];
+                  if (touch) onPointerMove(touch.clientX, touch.clientY);
+                }}
+                onTouchEnd={() => {
+                  setDraggingImage(false);
+                  setDraggingCorner(false);
+                }}
+              >
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05),rgba(255,255,255,0.01)_60%,rgba(0,0,0,0.15)_100%)]" />
 
-                  <div
-                    className="absolute cursor-grab active:cursor-grabbing"
-                    style={{
-                      left: avatarEditorState.x,
-                      top: avatarEditorState.y,
-                      width: avatarEditorState.width,
-                      height: avatarEditorState.height,
-                    }}
-                    onPointerDown={startMove}
-                  >
-                    <img
-                      src={avatarEditorImageUrl}
-                      alt="Szerkesztendő profilkép"
-                      draggable={false}
-                      className="h-full w-full select-none object-fill"
-                    />
+                <img
+                  src={editorImage.src}
+                  alt="Profilkép előnézet"
+                  draggable={false}
+                  className="absolute select-none"
+                  style={{
+                    width: renderedImageWidth,
+                    height: renderedImageHeight,
+                    left: `calc(50% - ${renderedImageWidth / 2}px + ${editorX}px)`,
+                    top: `calc(50% - ${renderedImageHeight / 2}px + ${editorY}px)`,
+                    maxWidth: "none",
+                    touchAction: "none",
+                    cursor: draggingImage ? "grabbing" : "grab",
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    startImageDrag(e.clientX, e.clientY);
+                  }}
+                  onTouchStart={(e) => {
+                    const touch = e.touches[0];
+                    if (touch) startImageDrag(touch.clientX, touch.clientY);
+                  }}
+                />
 
-                    {([
-                      ["nw", "-left-2 -top-2 cursor-nwse-resize"],
-                      ["ne", "-right-2 -top-2 cursor-nesw-resize"],
-                      ["sw", "-left-2 -bottom-2 cursor-nesw-resize"],
-                      ["se", "-right-2 -bottom-2 cursor-nwse-resize"],
-                    ] as const).map(([corner, classes]) => (
-                      <button
-                        key={corner}
-                        type="button"
-                        aria-label={`Átméretezés: ${corner}`}
-                        className={`absolute h-5 w-5 rounded-full border-2 border-white bg-red-500 shadow ${classes}`}
-                        onPointerDown={(event) => startResize(corner, event)}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="text-center text-xs leading-5 text-white/45">
-                  A körön belüli rész lesz elmentve profilképként.
-                </div>
+                <button
+                  type="button"
+                  aria-label="Méret állítása"
+                  className="absolute bottom-5 right-5 h-8 w-8 rounded-full border border-white/20 bg-black/70 text-white shadow-lg"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startCornerResize(e.clientX, e.clientY);
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    const touch = e.touches[0];
+                    if (touch) startCornerResize(touch.clientX, touch.clientY);
+                  }}
+                >
+                  ↘
+                </button>
               </div>
 
-              <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
-                <div>
-                  <div className="text-sm font-medium text-white">Előnézet</div>
-                  <div className="mt-3 flex items-center justify-center">
-                    <div className="relative h-32 w-32 overflow-hidden rounded-full border border-white/10 bg-white/5">
-                      <div
-                        className="absolute"
-                        style={{
-                          left: (avatarEditorState.x / AVATAR_EDITOR_SIZE) * 128,
-                          top: (avatarEditorState.y / AVATAR_EDITOR_SIZE) * 128,
-                          width: (avatarEditorState.width / AVATAR_EDITOR_SIZE) * 128,
-                          height: (avatarEditorState.height / AVATAR_EDITOR_SIZE) * 128,
-                        }}
-                      >
-                        <img
-                          src={avatarEditorImageUrl}
-                          alt="Profilkép előnézet"
-                          draggable={false}
-                          className="h-full w-full select-none object-fill"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-3 text-sm leading-6 text-white/70">
-                  Tipp: ha túl nagy a kép, fogd meg valamelyik sarkát és húzd befelé. Ha rossz helyen van az arc, fogd meg a képet és húzd a keret közepére.
-                </div>
-
-                <div className="flex flex-col gap-3 pt-2">
-                  <button
-                    type="button"
-                    className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm font-medium disabled:opacity-60"
-                    onClick={() => void saveEditedAvatar()}
-                    disabled={uploading}
-                  >
-                    {uploading ? "Mentés..." : "Mentés"}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="lmr-btn rounded-2xl px-4 py-2.5 text-sm font-medium"
-                    onClick={closeAvatarEditor}
-                    disabled={uploading}
-                  >
-                    Mégse
-                  </button>
-                </div>
+              <div className="text-center text-xs text-white/55">
+                Zoom: {Math.round(editorZoom * 100)}% • Görgő: nagyítás/kicsinyítés
               </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                className="lmr-btn rounded-2xl px-4 py-2.5 text-sm font-medium"
+                onClick={closeEditor}
+                disabled={editorSaving}
+              >
+                Mégse
+              </button>
+
+              <button
+                type="button"
+                className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm font-medium disabled:opacity-60"
+                onClick={() => void uploadCroppedAvatar()}
+                disabled={editorSaving}
+              >
+                {editorSaving ? "Mentés..." : "Mentés"}
+              </button>
             </div>
           </div>
         </div>
