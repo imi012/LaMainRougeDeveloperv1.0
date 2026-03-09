@@ -1127,6 +1127,13 @@ export default function VezetosegPage() {
 
 
   async function openInboxItem(row: UnifiedInboxRow) {
+    if (row.inbox_type === "leadando") {
+      setError(null);
+      setTab("leadandok");
+      await loadLeadandoDashboard();
+      return;
+    }
+
     if (!row.profile?.user_id) {
       setError("Ehhez a beküldéshez nem található felhasználó.");
       return;
@@ -1145,7 +1152,7 @@ export default function VezetosegPage() {
     setTgfDraft("");
     setIsEditingTgfDetail(false);
     setSummary(null);
-    setUserPanelTab(row.inbox_type === "leadando" ? "leadando" : row.inbox_type === "ticket" ? "tickets" : row.inbox_type === "service" ? "service" : "lore");
+    setUserPanelTab(row.inbox_type === "ticket" ? "tickets" : row.inbox_type === "service" ? "service" : "lore");
     setError(null);
     setBusy(`open:${profile.user_id}`);
     setTab("users");
@@ -1336,8 +1343,8 @@ export default function VezetosegPage() {
         <button className={tabBtnStyle(tab === "kezelo")} onClick={() => setTab("kezelo")}>
           Kezelőpanel
         </button>
-        <button className={tabBtnStyle(tab === "invites")} onClick={() => setTab("invites")}>
-          Meghívókódok
+        <button className={tabBtnStyle(tab === "kerdoivek")} onClick={() => setTab("kerdoivek")}>
+          Beérkezettek
         </button>
         <button className={tabBtnStyle(tab === "users")} onClick={() => setTab("users")}>
           Felhasználók
@@ -1345,11 +1352,11 @@ export default function VezetosegPage() {
         <button className={tabBtnStyle(tab === "leadandok")} onClick={() => setTab("leadandok")}>
           Leadandók
         </button>
-        <button className={tabBtnStyle(tab === "kerdoivek")} onClick={() => setTab("kerdoivek")}>
-          Beérkezettek
-        </button>
         <button className={tabBtnStyle(tab === "tgf")} onClick={() => setTab("tgf")}>
           TGF
+        </button>
+        <button className={tabBtnStyle(tab === "invites")} onClick={() => setTab("invites")}>
+          Meghívókódok
         </button>
         <button className={tabBtnStyle(tab === "blacklist")} onClick={() => setTab("blacklist")}>
           Blacklist
@@ -1455,7 +1462,7 @@ export default function VezetosegPage() {
               <tbody>
                 {invites.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-3 opacity-70" colSpan={8}>
+                    <td className="px-3 py-3 opacity-70" colSpan={7}>
                       Nincs meghívókód.
                     </td>
                   </tr>
@@ -1517,13 +1524,12 @@ export default function VezetosegPage() {
                   <th className="px-3 py-2">Felvéve</th>
                   <th className="px-3 py-2">Leadandó érvényes</th>
                   <th className="px-3 py-2">Inaktív</th>
-                  <th className="px-3 py-2">Művelet</th>
                 </tr>
               </thead>
               <tbody>
                 {users.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-3 opacity-70" colSpan={8}>
+                    <td className="px-3 py-3 opacity-70" colSpan={7}>
                       Nincs találat.
                     </td>
                   </tr>
@@ -1551,9 +1557,6 @@ export default function VezetosegPage() {
                         <td className="px-3 py-2">{fmt(u.created_at)}</td>
                         <td className="px-3 py-2">{formatDateOnly(u.leadando_due_at)}</td>
                         <td className="px-3 py-2">{activeInactivityBadge(u)}</td>
-                        <td className="px-3 py-2 text-xs font-semibold text-white/75">
-                          {busy === `open:${u.user_id}` ? "Betöltés..." : isOpen ? "Nyitva" : "Megnyitás"}
-                        </td>
                       </tr>
                     );
                   })
@@ -2183,6 +2186,7 @@ export default function VezetosegPage() {
                   <th className="px-3 py-2">Beküldés dátuma</th>
                   <th className="px-3 py-2">Státusz</th>
                   <th className="px-3 py-2">Mellékelt link / bizonyíték</th>
+                  <th className="px-3 py-2">Hány hétre adta le</th>
                   <th className="px-3 py-2">Leadandó érvényességi határidő</th>
                   <th className="px-3 py-2">Szerkesztés</th>
                   <th className="px-3 py-2">Elfogadás</th>
@@ -2220,6 +2224,7 @@ export default function VezetosegPage() {
                             "—"
                           )}
                         </td>
+                        <td className="px-3 py-2">{submission ? `${submission.weeks} hét` : "—"}</td>
                         <td className="px-3 py-2">
                           {leadandoDeadlineEditing[row.user_id] ? (
                             <input
@@ -2305,7 +2310,11 @@ export default function VezetosegPage() {
               <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm opacity-70">Még nincs beérkezett ügy.</div>
             ) : (
               unifiedInbox.map((row) => (
-                <div key={`${row.inbox_type}:${row.id}`} className="lmr-surface-soft rounded-[24px] p-4">
+                <div
+                  key={`${row.inbox_type}:${row.id}`}
+                  className="lmr-surface-soft cursor-pointer rounded-[24px] p-4 transition hover:bg-white/[0.04]"
+                  onClick={() => void openInboxItem(row)}
+                >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <div className="font-medium">{row.profile?.ic_name || "—"}</div>
@@ -2321,29 +2330,21 @@ export default function VezetosegPage() {
                       <div className="mt-1 text-xs opacity-70">Státusz: {prettyStatus(row.profile?.status)}</div>
                       {row.leadando?.imgur_url ? (
                         <div className="mt-2 text-xs opacity-80">
-                          Imgur: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.leadando.imgur_url)}>{row.leadando.imgur_url}</a>
+                          Imgur: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.leadando.imgur_url)} onClick={(e) => e.stopPropagation()}>{row.leadando.imgur_url}</a>
                         </div>
                       ) : null}
                       {row.service?.imgur_url ? (
                         <div className="mt-2 text-xs opacity-80">
-                          Imgur: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.service.imgur_url)}>{row.service.imgur_url}</a>
+                          Imgur: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.service.imgur_url)} onClick={(e) => e.stopPropagation()}>{row.service.imgur_url}</a>
                         </div>
                       ) : null}
                       {row.lore?.lore_url ? (
                         <div className="mt-2 text-xs opacity-80">
-                          Link: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.lore.lore_url)}>{row.lore.lore_url}</a>
+                          Link: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.lore.lore_url)} onClick={(e) => e.stopPropagation()}>{row.lore.lore_url}</a>
                         </div>
                       ) : null}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openInboxItem(row)}
-                        className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold hover:bg-red-500"
-                      >
-                        Megnyitás a kezelőpanelen
-                      </button>
-                    </div>
                   </div>
                 </div>
               ))
