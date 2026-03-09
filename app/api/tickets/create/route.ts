@@ -1,91 +1,176 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-
-function getBearerToken(req: Request) {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!auth) return null;
-  const m = auth.match(/^Bearer\s+(.+)$/i);
-  return m?.[1]?.trim() || null;
-}
+import { requireAppUser } from "@/lib/server/app-auth";
 
 type TicketType = "sanction" | "inactivity" | "namechange";
 
+type TicketInsertRow = {
+  user_id: string;
+  type: TicketType;
+  status: "open";
+  title: string | null;
+  description: string | null;
+  sanction_imgur_url?: string | null;
+  sanction_reason?: string | null;
+  inactivity_from?: string | null;
+  inactivity_to?: string | null;
+  old_name?: string | null;
+  new_name?: string | null;
+  namechange_reason?: string | null;
+};
+
+function cleanText(value: unknown, max = 500) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  return text.slice(0, max);
+}
+
+function cleanOptionalText(value: unknown, max = 500) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  return text.slice(0, max);
+}
+
+function isIsoDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function normalizeUrl(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return null;
+    }
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   try {
-    const token = getBearerToken(req);
-    if (!token) return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
+    const auth = await requireAppUser(req, {
+      requireMember: false,
+      allowPending: true,
+    });
 
-    const body = await req.json().catch(() => null);
-
-    const type = body?.type as TicketType | undefined;
-    if (!type || !["sanction", "inactivity", "namechange"].includes(type)) {
-      return NextResponse.json({ ok: false, message: "Érvénytelen ticket típus." }, { status: 400 });
+    if (!auth.ok) {
+      return NextResponse.json(
+        { ok: false, message: auth.message },
+        { status: auth.status }
+      );
     }
 
-    const admin = createAdminClient();
+    if (auth.profile.status === "inactive") {
+      return NextResponse.json(
+        { ok: false, message: "Inaktív státusszal ez a művelet nem engedélyezett." },
+        { status: 403 }
+      );
+    }
 
-    // token -> user
-    const { data: userRes, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userRes?.user) return NextResponse.json({ ok: false, message: "Nincs bejelentkezve." }, { status: 401 });
+    const body = await req.json().catch(() => null);
+    const type = body?.type as TicketType | undefined;
 
-    const user_id = userRes.user.id;
+    if (!type || !["sanction", "inactivity", "namechange"].includes(type)) {
+      return NextResponse.json(
+        { ok: false, message: "Érvénytelen ticket típus." },
+        { status: 400 }
+      );
+    }
 
-    // validálás + mapping
-    let row: any = {
-      user_id,
+    const row: TicketInsertRow = {
+      user_id: auth.userId,
       type,
       status: "open",
-      title: body?.title ?? null,
-      description: body?.description ?? null,
+      title: cleanOptionalText(body?.title, 120),
+      description: cleanOptionalText(body?.description, 2000),
     };
 
     if (type === "sanction") {
-      const sanction_imgur_url = String(body?.sanction_imgur_url || "").trim();
-      const sanction_reason = String(body?.sanction_reason || "").trim();
-      if (!sanction_imgur_url || !sanction_reason) {
-        return NextResponse.json({ ok: false, message: "Szankcióhoz link és ok kötelező." }, { status: 400 });
+      const sanctionImgurUrl = normalizeUrl(body?.sanction_imgur_url);
+      const sanctionReason = cleanText(body?.sanction_reason, 1000);
+
+      if (!sanctionImgurUrl || !sanctionReason) {
+        return NextResponse.json(
+          { ok: false, message: "Szankcióhoz link és ok kötelező." },
+          { status: 400 }
+        );
       }
-      row.sanction_imgur_url = sanction_imgur_url;
-      row.sanction_reason = sanction_reason;
+
+      row.sanction_imgur_url = sanctionImgurUrl;
+      row.sanction_reason = sanctionReason;
       row.title = "Szankció";
-      row.description = sanction_reason;
+      row.description = sanctionReason;
     }
 
     if (type === "inactivity") {
-      const inactivity_from = String(body?.inactivity_from || "").trim();
-      const inactivity_to = String(body?.inactivity_to || "").trim();
-      if (!inactivity_from || !inactivity_to) {
-        return NextResponse.json({ ok: false, message: "Inaktivitásnál mettől-meddig kötelező." }, { status: 400 });
+      const inactivityFrom = cleanText(body?.inactivity_from, 10);
+      const inactivityTo = cleanText(body?.inactivity_to, 10);
+
+      if (!inactivityFrom || !inactivityTo) {
+        return NextResponse.json(
+          { ok: false, message: "Inaktivitásnál mettől-meddig kötelező." },
+          { status: 400 }
+        );
       }
-      row.inactivity_from = inactivity_from; // date (YYYY-MM-DD)
-      row.inactivity_to = inactivity_to;
+
+      if (!isIsoDate(inactivityFrom) || !isIsoDate(inactivityTo)) {
+        return NextResponse.json(
+          { ok: false, message: "Az inaktivitás dátuma érvénytelen." },
+          { status: 400 }
+        );
+      }
+
+      if (inactivityFrom > inactivityTo) {
+        return NextResponse.json(
+          { ok: false, message: "A kezdődátum nem lehet későbbi, mint a záródátum." },
+          { status: 400 }
+        );
+      }
+
+      row.inactivity_from = inactivityFrom;
+      row.inactivity_to = inactivityTo;
       row.title = "Inaktivitás";
-      row.description = `${inactivity_from} → ${inactivity_to}`;
+      row.description = `${inactivityFrom} → ${inactivityTo}`;
     }
 
     if (type === "namechange") {
-      const old_name = String(body?.old_name || "").trim();
-      const new_name = String(body?.new_name || "").trim();
-      const namechange_reason = String(body?.namechange_reason || "").trim();
-      if (!old_name || !new_name || !namechange_reason) {
-        return NextResponse.json({ ok: false, message: "Névváltásnál minden mező kötelező." }, { status: 400 });
+      const oldName = cleanText(body?.old_name, 120);
+      const newName = cleanText(body?.new_name, 120);
+      const namechangeReason = cleanText(body?.namechange_reason, 1000);
+
+      if (!oldName || !newName || !namechangeReason) {
+        return NextResponse.json(
+          { ok: false, message: "Névváltásnál minden mező kötelező." },
+          { status: 400 }
+        );
       }
-      row.old_name = old_name;
-      row.new_name = new_name;
-      row.namechange_reason = namechange_reason;
+
+      row.old_name = oldName;
+      row.new_name = newName;
+      row.namechange_reason = namechangeReason;
       row.title = "Névváltás";
-      row.description = `${old_name} → ${new_name} (${namechange_reason})`;
+      row.description = `${oldName} → ${newName} (${namechangeReason})`;
     }
 
-    const ins = await admin.from("tickets").insert(row).select("id").maybeSingle();
+    const ins = await auth.admin.from("tickets").insert(row).select("id").maybeSingle();
+
     if (ins.error) {
       console.error("ticket create error:", ins.error);
-      return NextResponse.json({ ok: false, message: "Nem sikerült elküldeni a ticketet." }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, message: "Nem sikerült elküldeni a ticketet." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ ok: true, id: ins.data?.id ?? null });
   } catch (e: any) {
     console.error("ticket create fatal:", e);
-    return NextResponse.json({ ok: false, message: e?.message || "Szerver hiba." }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, message: e?.message || "Szerver hiba." },
+      { status: 500 }
+    );
   }
 }

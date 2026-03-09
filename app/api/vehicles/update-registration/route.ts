@@ -19,32 +19,75 @@ function normalizeUrl(value: string | null | undefined) {
   if (!value) return null;
   const raw = value.trim();
   if (!raw) return null;
-  if (!/^https?:\/\//i.test(raw)) return null;
-  return raw;
+
+  try {
+    const url = new URL(raw);
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    return raw;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAppUser(req, { requireMember: true, allowPending: false });
+  const auth = await requireAppUser(req, {
+    requireLeadership: true,
+    allowPending: false,
+  });
+
   if (!auth.ok) {
-    return NextResponse.json({ ok: false, message: auth.message }, { status: auth.status });
+    return NextResponse.json(
+      { ok: false, message: auth.message },
+      { status: auth.status }
+    );
   }
 
   try {
     const body = (await req.json().catch(() => null)) as Body | null;
+
     const vehicleId = (body?.vehicle_id || "").trim();
     const validUntil = normalizeDate(body?.registration_valid_until ?? null);
     const imgurUrl = normalizeUrl(body?.registration_imgur_url ?? null);
 
     if (!vehicleId) {
-      return NextResponse.json({ ok: false, message: "Hiányzó jármű azonosító." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, message: "Hiányzó jármű azonosító." },
+        { status: 400 }
+      );
     }
 
     if ((body?.registration_valid_until ?? "").toString().trim() && !validUntil) {
-      return NextResponse.json({ ok: false, message: "Érvénytelen forgalmi dátum." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, message: "Érvénytelen forgalmi dátum." },
+        { status: 400 }
+      );
     }
 
     if ((body?.registration_imgur_url ?? "").toString().trim() && !imgurUrl) {
-      return NextResponse.json({ ok: false, message: "Érvénytelen Imgur link." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, message: "Érvénytelen link." },
+        { status: 400 }
+      );
+    }
+
+    const { data: existing, error: existingError } = await auth.admin
+      .from("faction_vehicles")
+      .select("id")
+      .eq("id", vehicleId)
+      .maybeSingle();
+
+    if (existingError) {
+      return NextResponse.json(
+        { ok: false, message: existingError.message },
+        { status: 500 }
+      );
+    }
+
+    if (!existing) {
+      return NextResponse.json(
+        { ok: false, message: "A jármű nem található." },
+        { status: 404 }
+      );
     }
 
     const { data, error } = await auth.admin
@@ -61,11 +104,17 @@ export async function POST(req: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ ok: false, message: error.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, message: error.message },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ ok: true, vehicle: data });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message || "Szerver hiba." }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, message: e?.message || "Szerver hiba." },
+      { status: 500 }
+    );
   }
 }
