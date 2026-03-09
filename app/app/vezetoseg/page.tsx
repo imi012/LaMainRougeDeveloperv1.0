@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import DecisionBadge from "@/app/app/_components/decision-badge";
 
 type MyProfile = {
   user_id: string;
@@ -1742,7 +1743,7 @@ export default function VezetosegPage() {
                   <div className="lmr-surface-soft rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Karaktertörténet</div>
                     <div className="mt-2 text-lg font-semibold">
-                      {summary?.lore_submitted ? (summary?.lore_approved ? "Approved" : "Pending") : "Nincs"}
+                      {summary?.lore_submitted ? <DecisionBadge value={summary?.lore_approved ? "approved" : "pending"} /> : "Nincs"}
                     </div>
                   </div>
 
@@ -1869,7 +1870,7 @@ export default function VezetosegPage() {
                                 Beküldve: {fmt(l.submitted_at)} • Hetek: {l.weeks}
                               </div>
                               <div className="mt-1 text-xs opacity-70">
-                                Állapot: {l.is_approved ? "Approved" : "Pending"}
+                                Állapot: 
                               </div>
                               <div className="mt-1 text-xs opacity-70">
                                 Imgur:{" "}
@@ -2066,7 +2067,7 @@ export default function VezetosegPage() {
                             <div className="flex flex-wrap items-start justify-between gap-4">
                               <div>
                                 <div className="font-medium">
-                                  Beküldve: {fmt(l.submitted_at)} • Állapot: {l.is_approved ? "Elfogadva" : "Pending"}
+                                  Beküldve: {fmt(l.submitted_at)} • Állapot: <DecisionBadge value={l.is_approved ? "approved" : "pending"} />
                                 </div>
                                 {l.discord_name ? (
                                   <div className="mt-1 text-xs opacity-70">Discord név: {l.discord_name}</div>
@@ -2214,7 +2215,7 @@ export default function VezetosegPage() {
                         <td className="px-3 py-2 font-medium">{row.ic_name || "—"}</td>
                         <td className="px-3 py-2">{row.rank_name || "—"}</td>
                         <td className="px-3 py-2">{submission ? fmt(submission.submitted_at) : "—"}</td>
-                        <td className="px-3 py-2">{statusLabel}</td>
+                        <td className="px-3 py-2"><DecisionBadge value={statusLabel} /></td>
                         <td className="px-3 py-2">
                           {submission?.imgur_url ? (
                             <a className="underline underline-offset-4" target="_blank" rel="noreferrer" href={normalizeUrl(submission.imgur_url)}>
@@ -2322,7 +2323,7 @@ export default function VezetosegPage() {
                         Típus: {row.inbox_type === "leadando" ? "Leadandó" : row.inbox_type === "ticket" ? "Ticket" : row.inbox_type === "service" ? "Szereltetés igénylés" : "Karaktertörténet"}
                       </div>
                       <div className="mt-1 text-xs opacity-70">
-                        Beérkezett: {fmt(row.submitted_at)}{row.status_label ? ` • Állapot: ${row.status_label}` : ""}
+                        Beérkezett: {fmt(row.submitted_at)}{row.status_label ? " • Állapot: " : ""}{row.status_label ? <DecisionBadge value={row.status_label} className="align-middle" /> : null}
                       </div>
                       {row.title ? <div className="mt-1 text-xs opacity-70">Cím: {row.title}</div> : null}
                       {row.subtitle ? <div className="mt-1 text-xs opacity-70">Részlet: {row.subtitle}</div> : null}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import DecisionBadge from "@/app/app/_components/decision-badge";
 
 type MySubmission = {
   id: string;
@@ -169,7 +170,7 @@ export default function LeadandoPage() {
                   <td>{fmt(x.submitted_at)}</td>
                   <td>{x.weeks}</td>
                   <td><span className="underline underline-offset-4">{x.imgur_url}</span></td>
-                  <td>{x.is_approved ? "Approved" : "Pending"}</td>
+                  <td><DecisionBadge value={x.is_approved ? "approved" : "pending"} /></td>
                 </tr>
               ))}
             </tbody>

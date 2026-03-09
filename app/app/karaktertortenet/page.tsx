@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import DecisionBadge from "@/app/app/_components/decision-badge";
 
 type LoreRow = {
   id: string;
@@ -194,11 +195,9 @@ export default function Page() {
               {busy ? "Mentés..." : row ? "Frissítés" : "Beküldés"}
             </button>
 
-            <div className="text-sm text-white/65">
-              Állapot:{" "}
-              <span className={row ? (row.is_approved ? "text-emerald-200" : "text-amber-200") : "text-white/72"}>
-                {row ? (row.is_approved ? "Elfogadva" : "Beküldve / függőben") : "Nincs még leadva"}
-              </span>
+            <div className="flex items-center gap-2 text-sm text-white/65">
+              <span>Állapot:</span>
+              {row ? <DecisionBadge value={row.is_approved ? "approved" : "pending"} /> : <span className="text-white/72">Nincs még leadva</span>}
             </div>
           </div>
         </div>
