@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { canUseMemberFeatures, isLeadershipProfile } from "@/lib/permissions";
+import { isLeadershipProfile } from "@/lib/permissions";
 
 type ProfileRow = {
   user_id: string;
@@ -67,23 +67,30 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false);
 
   const [warnings, setWarnings] = useState<WarningRow[]>([]);
-  const [actionsCount, setActionsCount] = useState(0);
-  const [eventsCount, setEventsCount] = useState(0);
-
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const isLeadership = useMemo(() => isLeadershipProfile(me), [me]);
   const isSelf = useMemo(() => !!me && !!profile && me.user_id === profile.user_id, [me, profile]);
+
   const canEdit = useMemo(() => isSelf || isLeadership, [isSelf, isLeadership]);
-  const canSeeStats = useMemo(
-    () => isSelf || isLeadership || canUseMemberFeatures(me),
-    [isSelf, isLeadership, me]
-  );
+
+  const canViewProfile = useMemo(() => {
+    if (!me || !profile) return false;
+    if (isLeadership) return true;
+    if (isSelf) return true;
+
+    return profile.status !== "inactive" && profile.status !== "preinvite";
+  }, [isLeadership, isSelf, me, profile]);
+
+  const canSeeStats = useMemo(() => isSelf || isLeadership, [isSelf, isLeadership]);
+  const canSeeWarnings = useMemo(() => isSelf || isLeadership, [isSelf, isLeadership]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
+      setLoading(true);
       setError(null);
 
       const {
@@ -97,43 +104,60 @@ export default function ProfilePage() {
 
       const { data: meData, error: meErr } = await supabase
         .from("profiles")
-        .select("user_id,ic_name,avatar_url,bio,status,created_at,site_role,rank_id")
+        .select("user_id, ic_name, avatar_url, bio, status, created_at, site_role, rank_id")
         .eq("user_id", user.id)
         .maybeSingle();
 
       if (meErr) {
-        if (!cancelled) setError(meErr.message);
+        if (!cancelled) {
+          setError(meErr.message);
+          setLoading(false);
+        }
         return;
       }
 
       const meProfile = (meData ?? null) as ProfileRow | null;
-      if (!cancelled) setMe(meProfile);
+
+      if (!cancelled) {
+        setMe(meProfile);
+      }
 
       const targetUserId = userParam || user.id;
 
       const { data: pData, error: pErr } = await supabase
         .from("profiles")
-        .select("user_id,ic_name,avatar_url,bio,status,created_at,site_role,rank_id")
+        .select("user_id, ic_name, avatar_url, bio, status, created_at, site_role, rank_id")
         .eq("user_id", targetUserId)
         .maybeSingle();
 
       if (pErr) {
-        if (!cancelled) setError(pErr.message);
+        if (!cancelled) {
+          setError(pErr.message);
+          setLoading(false);
+        }
         return;
       }
 
       const targetProfile = (pData ?? null) as ProfileRow | null;
 
+      if (!targetProfile) {
+        if (!cancelled) {
+          setError("A profil nem található.");
+          setLoading(false);
+        }
+        return;
+      }
+
       if (!cancelled) {
         setProfile(targetProfile);
-        setBioDraft(targetProfile?.bio ?? "");
+        setBioDraft(targetProfile.bio ?? "");
         setEditingBio(false);
       }
 
-      if (targetProfile?.rank_id) {
+      if (targetProfile.rank_id) {
         const { data: rData, error: rErr } = await supabase
           .from("ranks")
-          .select("id,name,priority")
+          .select("id, name, priority")
           .eq("id", targetProfile.rank_id)
           .maybeSingle();
 
@@ -151,34 +175,29 @@ export default function ProfilePage() {
         setRankMissing(false);
       }
 
-      const { data: warnData } = await supabase
-        .from("warnings")
-        .select("id,reason,issued_at,expires_at,is_active")
-        .eq("user_id", targetUserId)
-        .order("issued_at", { ascending: false });
+      const meIsLeadership = isLeadershipProfile(meProfile);
+      const meIsSelf = meProfile?.user_id === targetProfile.user_id;
 
-      if (!cancelled) {
-        setWarnings((warnData ?? []) as WarningRow[]);
+      if (meIsLeadership || meIsSelf) {
+        const { data: warnData } = await supabase
+          .from("warnings")
+          .select("id, reason, issued_at, expires_at, is_active")
+          .eq("user_id", targetUserId)
+          .order("issued_at", { ascending: false });
+
+        if (!cancelled) {
+          setWarnings((warnData ?? []) as WarningRow[]);
+        }
+      } else if (!cancelled) {
+        setWarnings([]);
       }
 
-      const { count: actionCount } = await supabase
-        .from("actions")
-        .select("id", { count: "exact", head: true })
-        .contains("participant_user_ids", [targetUserId]);
-
-      const { count: eventCount } = await supabase
-        .from("event_participants")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", targetUserId)
-        .eq("attended", true);
-
       if (!cancelled) {
-        setActionsCount(actionCount ?? 0);
-        setEventsCount(eventCount ?? 0);
+        setLoading(false);
       }
     }
 
-    void load();
+    load();
 
     return () => {
       cancelled = true;
@@ -237,13 +256,13 @@ export default function ProfilePage() {
         data: { publicUrl },
       } = supabase.storage.from("avatars").getPublicUrl(path);
 
-      const { error: profErr } = await supabase
+      const { error: profileErr } = await supabase
         .from("profiles")
         .update({ avatar_url: publicUrl })
         .eq("user_id", profile.user_id);
 
-      if (profErr) {
-        setError(profErr.message);
+      if (profileErr) {
+        setError(profileErr.message);
       } else {
         setProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : prev));
       }
@@ -252,14 +271,44 @@ export default function ProfilePage() {
     }
   }
 
-  if (!profile) {
-    return <div className="px-4 py-6 text-white/70">Betöltés...</div>;
+  if (loading) {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 lg:px-8">
+        <div className="lmr-card rounded-[28px] p-6">Betöltés...</div>
+      </div>
+    );
+  }
+
+  if (error && !profile) {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 lg:px-8">
+        <div className="lmr-card rounded-[28px] p-6">
+          <div className="rounded-[20px] border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {error}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile || !canViewProfile) {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 lg:px-8">
+        <div className="lmr-card rounded-[28px] p-6">
+          <div className="lmr-empty-state rounded-[24px] px-4 py-8 text-sm">
+            Ez a profil nem megtekinthető.
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const avatar = profile.avatar_url || "";
-  const warningsActiveCount = warnings.filter(
-    (w) => w.is_active && (!w.expires_at || w.expires_at > new Date().toISOString())
-  ).length;
+  const warningsActiveCount = warnings.filter((w) => {
+    if (!w.is_active) return false;
+    if (!w.expires_at) return true;
+    return w.expires_at > new Date().toISOString();
+  }).length;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 lg:px-8">
@@ -275,8 +324,8 @@ export default function ProfilePage() {
 
               <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-white/65">
                 {canEdit
-                  ? "Saját profilodat vagy vezetőségként másét is szerkesztheted."
-                  : "Itt megtekintheted a profilhoz tartozó adatokat, rangot és statisztikákat."}
+                  ? ""
+                  : "Itt megtekintheted a profilhoz tartozó adatokat."}
               </p>
             </div>
 
@@ -337,7 +386,7 @@ export default function ProfilePage() {
                     </label>
 
                     <div className="mt-2 break-words text-center text-xs leading-5 text-white/45">
-                      Bucket: avatars
+                      
                     </div>
                   </div>
                 ) : (
@@ -354,7 +403,7 @@ export default function ProfilePage() {
                   <div className="min-w-0">
                     <h2 className="break-words text-xl font-semibold text-white">Profil leírás</h2>
                     <p className="mt-1 break-words text-sm leading-6 text-white/60">
-                      Rövid bemutatkozás és személyes profil információ.
+                      
                     </p>
                   </div>
 
@@ -412,10 +461,10 @@ export default function ProfilePage() {
                 <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
                   <h2 className="break-words text-xl font-semibold text-white">Statisztika</h2>
                   <p className="mt-1 break-words text-sm leading-6 text-white/60">
-                    A részt vett események, akciók és figyelmeztetések áttekintése.
+                    
                   </p>
 
-                  <div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-2">
                     <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4">
                       <div className="break-words text-xs uppercase tracking-[0.12em] text-white/52">
                         Felvéve
@@ -433,33 +482,15 @@ export default function ProfilePage() {
                         {warningsActiveCount}
                       </div>
                     </div>
-
-                    <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4">
-                      <div className="break-words text-xs uppercase tracking-[0.12em] text-white/52">
-                        Események
-                      </div>
-                      <div className="mt-2 break-words text-lg font-semibold leading-tight text-white">
-                        {eventsCount}
-                      </div>
-                    </div>
-
-                    <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4">
-                      <div className="break-words text-xs uppercase tracking-[0.12em] text-white/52">
-                        Akciók
-                      </div>
-                      <div className="mt-2 break-words text-lg font-semibold leading-tight text-white">
-                        {actionsCount}
-                      </div>
-                    </div>
                   </div>
                 </section>
               ) : null}
 
-              {canSeeStats ? (
+              {canSeeWarnings ? (
                 <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
                   <h2 className="break-words text-xl font-semibold text-white">Figyelmeztetések</h2>
                   <p className="mt-1 break-words text-sm leading-6 text-white/60">
-                    Részletes lista a korábbi és aktív figyelmeztetésekről.
+                    
                   </p>
 
                   {warnings.length === 0 ? (
