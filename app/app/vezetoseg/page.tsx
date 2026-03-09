@@ -1532,9 +1532,18 @@ export default function VezetosegPage() {
                     const rankName =
                       ranks.find((r) => r.id === u.rank_id)?.name ??
                       (u.rank_id ? "Törölt rang" : "—");
+                    const isOpen = selectedUser?.user_id === u.user_id;
+                    const isBusy = !token || busy === `open:${u.user_id}`;
 
                     return (
-                      <tr key={u.user_id} className="border-t border-white/10">
+                      <tr
+                        key={u.user_id}
+                        className={`border-t border-white/10 transition ${isBusy ? "opacity-70" : "cursor-pointer hover:bg-white/[0.03]"} ${isOpen ? "bg-white/[0.04]" : ""}`}
+                        onClick={() => {
+                          if (isBusy) return;
+                          void openUser(u);
+                        }}
+                      >
                         <td className="px-3 py-2">{u.ic_name || "—"}</td>
                         <td className="px-3 py-2"><Badge className={statusBadgeStyle(u.status)}>{prettyStatus(u.status)}</Badge></td>
                         <td className="px-3 py-2"><Badge className={roleBadgeStyle(u.site_role)}>{prettyRole(u.site_role)}</Badge></td>
@@ -1542,14 +1551,8 @@ export default function VezetosegPage() {
                         <td className="px-3 py-2">{fmt(u.created_at)}</td>
                         <td className="px-3 py-2">{formatDateOnly(u.leadando_due_at)}</td>
                         <td className="px-3 py-2">{activeInactivityBadge(u)}</td>
-                        <td className="px-3 py-2">
-                          <button
-                            onClick={() => openUser(u)}
-                            disabled={!token || busy === `open:${u.user_id}`}
-                            className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                          >
-                            {selectedUser?.user_id === u.user_id ? "Bezárás" : "Adatlap"}
-                          </button>
+                        <td className="px-3 py-2 text-xs font-semibold text-white/75">
+                          {busy === `open:${u.user_id}` ? "Betöltés..." : isOpen ? "Nyitva" : "Megnyitás"}
                         </td>
                       </tr>
                     );
@@ -1578,136 +1581,6 @@ export default function VezetosegPage() {
               Következő
             </button>
           </div>
-
-          {selectedUser && (
-        <div className="mt-6">
-          <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-lg font-semibold">Fekete lista</div>
-              <div className="ml-auto flex gap-2">
-                <button
-                  className={tabBtnStyle(blacklistMode === "existing")}
-                  onClick={() => setBlacklistMode("existing")}
-                >
-                  Regisztrált felhasználó
-                </button>
-                <button
-                  className={tabBtnStyle(blacklistMode === "manual")}
-                  onClick={() => setBlacklistMode("manual")}
-                >
-                  Manuális felvétel
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              {blacklistMode === "existing" ? (
-                <>
-                  <select
-                    value={blacklistSelectedUserId}
-                    onChange={(e) => {
-                      const userId = e.target.value;
-                      setBlacklistSelectedUserId(userId);
-                      const found = selectableBlacklistUsers.find((u) => u.user_id === userId);
-                      setBlacklistManualDiscordName(found?.discord_name || "");
-                    }}
-                    className="rounded-2xl border px-3.5 py-3 text-sm"
-                  >
-                    <option value="">Válassz felhasználót...</option>
-                    {selectableBlacklistUsers.map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.ic_name || "—"}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    value={blacklistReason}
-                    onChange={(e) => setBlacklistReason(e.target.value)}
-                    placeholder="Fekete lista oka"
-                    className="rounded-2xl border px-3.5 py-3 text-sm"
-                  />
-                  <button
-                    onClick={createBlacklistEntry}
-                    disabled={!token || !blacklistSelectedUserId || !blacklistReason.trim() || busy === "blacklist:create"}
-                    className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                  >
-                    {busy === "blacklist:create" ? "Mentés..." : "Feketelistára tesz"}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <input
-                    value={blacklistManualIcName}
-                    onChange={(e) => setBlacklistManualIcName(e.target.value)}
-                    placeholder="IC név"
-                    className="rounded-2xl border px-3.5 py-3 text-sm"
-                  />
-                  <input
-                    value={blacklistManualDiscordName}
-                    onChange={(e) => setBlacklistManualDiscordName(e.target.value)}
-                    placeholder="Discord név"
-                    className="rounded-2xl border px-3.5 py-3 text-sm"
-                  />
-                  <input
-                    value={blacklistReason}
-                    onChange={(e) => setBlacklistReason(e.target.value)}
-                    placeholder="Fekete lista oka"
-                    className="rounded-2xl border px-3.5 py-3 text-sm"
-                  />
-                  <button
-                    onClick={createBlacklistEntry}
-                    disabled={!token || !blacklistManualIcName.trim() || !blacklistReason.trim() || busy === "blacklist:create"}
-                    className="md:col-span-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold hover:bg-red-500 disabled:opacity-50"
-                  >
-                    {busy === "blacklist:create" ? "Mentés..." : "Manuális blacklist felvétel"}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-x-auto rounded-[24px] border border-white/10">
-            <table className="w-full text-sm">
-              <thead className="bg-white/5">
-                <tr className="text-left">
-                  <th className="px-3 py-2">IC név</th>
-                  <th className="px-3 py-2">Discord név</th>
-                  <th className="px-3 py-2">Fekete lista oka</th>
-                  <th className="px-3 py-2">Felvéve</th>
-                  <th className="px-3 py-2">Művelet</th>
-                </tr>
-              </thead>
-              <tbody>
-                {blacklist.length === 0 ? (
-                  <tr>
-                    <td className="px-3 py-3 opacity-70" colSpan={5}>
-                      Nincs fekete listás bejegyzés.
-                    </td>
-                  </tr>
-                ) : (
-                  blacklist.map((row) => (
-                    <tr key={row.id} className="border-t border-white/10">
-                      <td className="px-3 py-2">{row.ic_name || "—"}</td>
-                      <td className="px-3 py-2">{row.discord_name || "—"}</td>
-                      <td className="px-3 py-2">{row.reason || "—"}</td>
-                      <td className="px-3 py-2">{fmt(row.created_at)}</td>
-                      <td className="px-3 py-2">
-                        <button
-                          onClick={() => deleteBlacklistEntry(row)}
-                          disabled={!token || busy === `blacklist:delete:${row.id}`}
-                          className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                        >
-                          {busy === `blacklist:delete:${row.id}` ? "..." : "Törlés"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
           {selectedUser && (
             <div className="mt-6 lmr-surface-soft rounded-[26px] p-5 md:p-6">
