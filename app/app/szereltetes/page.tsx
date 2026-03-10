@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import DecisionBadge from "@/app/app/_components/decision-badge";
 
 type VehicleRow = {
   id: string;
@@ -57,13 +58,6 @@ function formatMoney(value: string | null | undefined) {
   const digits = (value || "").replace(/\D/g, "");
   if (!digits) return "—";
   return `${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".")}$`;
-}
-
-function statusBadge(status: string) {
-  if (status === "approved") {
-    return "inline-flex rounded-full border border-emerald-400/25 bg-emerald-400/12 px-2.5 py-1 text-xs font-semibold text-emerald-100";
-  }
-  return "inline-flex rounded-full border border-amber-400/25 bg-amber-400/12 px-2.5 py-1 text-xs font-semibold text-amber-100";
 }
 
 export default function SzereltetesPage() {
@@ -175,7 +169,6 @@ export default function SzereltetesPage() {
 
   useEffect(() => {
     initPage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function submit() {
@@ -438,9 +431,7 @@ export default function SzereltetesPage() {
                         )}
                       </td>
                       <td>
-                        <span className={statusBadge(row.status)}>
-                          {row.status === "approved" ? "Elfogadva" : "Függőben"}
-                        </span>
+                        <DecisionBadge value={row.status} />
                       </td>
                     </tr>
                   ))

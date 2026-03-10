@@ -1,51 +1,66 @@
-type DecisionBadgeProps = {
-  value: string | null | undefined;
-  className?: string;
+"use client";
+
+type Props = {
+  value?: string | boolean | null;
 };
 
-function normalizeDecision(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
+function normalize(value: Props["value"]) {
+  if (value === true) return "approved";
+  if (value === false) return "rejected";
+
+  const v = String(value ?? "").toLowerCase();
+
+  if (
+    v === "approved" ||
+    v === "accepted" ||
+    v === "elfogadva" ||
+    v === "jóváhagyva"
+  )
+    return "approved";
+
+  if (
+    v === "pending" ||
+    v === "open" ||
+    v === "submitted" ||
+    v === "függőben" ||
+    v === "beküldve"
+  )
+    return "pending";
+
+  if (
+    v === "rejected" ||
+    v === "declined" ||
+    v === "denied" ||
+    v === "elutasítva" ||
+    v === "visszautasítva"
+  )
+    return "rejected";
+
+  return "pending";
 }
 
-function getDecisionConfig(value: string | null | undefined) {
-  const normalized = normalizeDecision(value);
+export default function DecisionBadge({ value }: Props) {
+  const status = normalize(value);
 
-  if (["approved", "accepted", "elfogadva", "jóváhagyva", "approved / accepted"].includes(normalized)) {
-    return {
-      label: "Elfogadva",
-      className: "border-emerald-500/35 bg-emerald-500/15 text-emerald-200",
-    };
+  if (status === "approved") {
+    return (
+      <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
+        Elfogadva
+      </span>
+    );
   }
 
-  if (["pending", "open", "függőben", "fuggoben", "beküldve / függőben", "bekuldve / fuggoben", "beküldve", "bekuldve"].includes(normalized)) {
-    return {
-      label: "Függőben",
-      className: "border-yellow-500/35 bg-yellow-500/15 text-yellow-200",
-    };
-  }
-
-  if (["rejected", "declined", "denied", "elutasítva", "elutasitva"].includes(normalized)) {
-    return {
-      label: "Elutasítva",
-      className: "border-red-500/35 bg-red-500/15 text-red-200",
-    };
-  }
-
-  return null;
-}
-
-export default function DecisionBadge({ value, className = "" }: DecisionBadgeProps) {
-  const config = getDecisionConfig(value);
-
-  if (!config) {
-    return <span className={className}>{value ?? "—"}</span>;
+  if (status === "rejected") {
+    return (
+      <span className="px-3 py-1 text-xs font-semibold rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
+        Elutasítva
+      </span>
+    );
   }
 
   return (
-    <span
-      className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${config.className} ${className}`.trim()}
-    >
-      {config.label}
+    <span className="px-3 py-1 text-xs font-semibold rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+      Függőben
     </span>
   );
 }
