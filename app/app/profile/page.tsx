@@ -31,6 +31,14 @@ type WarningRow = {
   is_active: boolean;
 };
 
+type InactivityTicketRow = {
+  inactivity_from: string | null;
+  inactivity_to: string | null;
+  status?: string | null;
+  type?: string | null;
+  created_at?: string | null;
+};
+
 type AvatarEditorState = {
   file: File | null;
   src: string | null;
@@ -62,12 +70,6 @@ function ymd(iso: string | null | undefined) {
   const dd = String(d.getDate()).padStart(2, "0");
 
   return `${yyyy}.${mm}.${dd}`;
-}
-
-function fileExt(name: string) {
-  const parts = name.split(".");
-  if (parts.length < 2) return "png";
-  return parts[parts.length - 1].toLowerCase();
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -108,6 +110,18 @@ async function loadImage(src: string) {
   });
 }
 
+function getActiveInactivityText(ticket: InactivityTicketRow | null | undefined) {
+  if (!ticket?.inactivity_to) return "Nincs";
+
+  const end = new Date(ticket.inactivity_to);
+  if (Number.isNaN(end.getTime())) return "Nincs";
+
+  const now = new Date();
+  if (end <= now) return "Nincs";
+
+  return `${ymd(ticket.inactivity_to)}-ig`;
+}
+
 export default function ProfilePage() {
   const supabase = createClient();
   const params = useSearchParams();
@@ -128,6 +142,8 @@ export default function ProfilePage() {
   const [warnings, setWarnings] = useState<WarningRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [inactivityText, setInactivityText] = useState<string>("Nincs");
 
   const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
   const [avatarEditor, setAvatarEditor] = useState<AvatarEditorState>({
@@ -159,7 +175,6 @@ export default function ProfilePage() {
     if (!me || !profile) return false;
     if (isLeadership) return true;
     if (isSelf) return true;
-
     return profile.status !== "inactive" && profile.status !== "preinvite";
   }, [isLeadership, isSelf, me, profile]);
 
@@ -272,7 +287,17 @@ export default function ProfilePage() {
         setWarnings([]);
       }
 
+      const { data: inactivityData } = await supabase
+        .from("tickets")
+        .select("inactivity_from, inactivity_to, status, type, created_at")
+        .eq("user_id", targetUserId)
+        .eq("type", "inactivity")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       if (!cancelled) {
+        setInactivityText(getActiveInactivityText((inactivityData ?? null) as InactivityTicketRow | null));
         setLoading(false);
       }
     }
@@ -285,9 +310,7 @@ export default function ProfilePage() {
   }, [router, supabase, userParam]);
 
   useEffect(() => {
-    if (!avatarEditorOpen) {
-      return;
-    }
+    if (!avatarEditorOpen) return;
 
     const previousOverflow = document.body.style.overflow;
     const previousTouchAction = document.body.style.touchAction;
@@ -400,24 +423,6 @@ export default function ProfilePage() {
       startX: 0,
       startY: 0,
       startScale: 1,
-    });
-  }
-
-  function updateAvatarPosition(nextX: number, nextY: number, nextScale = avatarEditor.scale) {
-    setAvatarEditor((prev) => {
-      const constrained = constrainPosition(
-        nextX,
-        nextY,
-        nextScale,
-        prev.imageWidth,
-        prev.imageHeight
-      );
-
-      return {
-        ...prev,
-        x: constrained.x,
-        y: constrained.y,
-      };
     });
   }
 
@@ -626,19 +631,17 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 lg:px-8">
-        <div className="lmr-card rounded-[28px] p-6">Betöltés...</div>
+      <div className="lmr-page lmr-page-wide">
+        <div className="px-1 py-6 text-white/70">Betöltés...</div>
       </div>
     );
   }
 
   if (error && !profile) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 lg:px-8">
-        <div className="lmr-card rounded-[28px] p-6">
-          <div className="rounded-[20px] border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {error}
-          </div>
+      <div className="lmr-page lmr-page-wide">
+        <div className="rounded-[20px] border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {error}
         </div>
       </div>
     );
@@ -646,11 +649,9 @@ export default function ProfilePage() {
 
   if (!profile || !canViewProfile) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 lg:px-8">
-        <div className="lmr-card rounded-[28px] p-6">
-          <div className="lmr-empty-state rounded-[24px] px-4 py-8 text-sm">
-            Ez a profil nem megtekinthető.
-          </div>
+      <div className="lmr-page lmr-page-wide">
+        <div className="lmr-empty-state rounded-[24px] px-4 py-8 text-sm">
+          Ez a profil nem megtekinthető.
         </div>
       </div>
     );
@@ -665,36 +666,14 @@ export default function ProfilePage() {
 
   return (
     <>
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 lg:px-8">
-        <div className="space-y-5">
-          <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
-            <div className="flex min-w-0 flex-col gap-5 md:flex-row md:items-start md:justify-between">
-              <div className="min-w-0">
-                <div className="text-xs uppercase tracking-[0.16em] text-white/45">Profil</div>
-
-                <h1 className="mt-2 break-words text-3xl font-semibold tracking-tight text-white md:text-4xl">
-                  {profile.ic_name ?? "Profil"}
-                </h1>
-
-                <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-white/65">
-                  {canEdit
-                    ? ""
-                    : "Itt megtekintheted a profilhoz tartozó adatokat."}
-                </p>
-              </div>
-
-              {error ? (
-                <div className="max-w-full break-words rounded-[18px] border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {error}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-6 grid min-w-0 gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-              <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[28px] p-5">
-                <div className="flex min-w-0 flex-col items-center text-center">
+      <div className="lmr-page lmr-page-wide">
+        <div className="space-y-12">
+          <section className="lmr-hero">
+            <div className="grid gap-12 xl:grid-cols-[280px_minmax(0,1fr)] xl:items-start">
+              <div className="p-2">
+                <div className="flex flex-col items-center text-center">
                   {avatar ? (
-                    <div className="relative h-36 w-36 shrink-0 overflow-hidden rounded-full border border-white/10 bg-white/5">
+                    <div className="relative h-36 w-36 overflow-hidden rounded-full border border-white/10 bg-white/5">
                       <Image
                         src={avatar}
                         alt="Profilkép"
@@ -705,26 +684,23 @@ export default function ProfilePage() {
                       />
                     </div>
                   ) : (
-                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 text-center text-sm text-white/50">
+                    <div className="flex h-36 w-36 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 text-center text-sm text-white/50">
                       Nincs profilkép
                     </div>
                   )}
 
-                  <div className="mt-4 max-w-full break-words text-3xl font-semibold leading-tight text-white">
-                    {profile.ic_name ?? "—"}
-                  </div>
+                  <h1 className="mt-6 break-words text-3xl font-semibold leading-tight tracking-tight text-white">
+                    {profile.ic_name ?? "Profil"}
+                  </h1>
 
-                  <div className="mt-3 max-w-full break-words text-sm leading-6 text-white/65">
-                    Rang: {rank?.name ?? (rankMissing ? "Törölt rang" : "—")}
-                  </div>
-
-                  <div className="max-w-full break-words text-sm leading-6 text-white/55">
-                    Státusz: {profile.status ?? "—"}
+                  <div className="mt-5 space-y-2 text-sm text-white/62">
+                    <p>Rang: {rank?.name ?? (rankMissing ? "Törölt rang" : "—")}</p>
+                    <p>Státusz: {profile.status ?? "—"}</p>
                   </div>
 
                   {canEdit ? (
-                    <div className="mt-5 w-full min-w-0">
-                      <label className="lmr-btn lmr-btn-primary flex w-full cursor-pointer items-center justify-center rounded-2xl px-4 py-2.5 text-center text-sm font-medium leading-5">
+                    <div className="mt-7 w-full max-w-[260px]">
+                      <label className="lmr-btn lmr-btn-primary flex w-full cursor-pointer items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-medium">
                         {uploading ? "Feltöltés..." : "Profilkép feltöltése"}
                         <input
                           type="file"
@@ -733,41 +709,50 @@ export default function ProfilePage() {
                           disabled={uploading}
                           onChange={(e) => {
                             const f = e.target.files?.[0];
-                            if (f) {
-                              void openAvatarEditor(f);
-                            }
+                            if (f) void openAvatarEditor(f);
                             e.currentTarget.value = "";
                           }}
                         />
                       </label>
-
-                      <div className="mt-2 break-words text-center text-xs leading-5 text-white/45">
-                        
-                      </div>
                     </div>
-                  ) : (
-                    <div className="mt-5 max-w-full break-words text-sm leading-6 text-white/50">
-                      Más profilját csak megtekinteni tudod.
-                    </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
-              <div className="min-w-0 space-y-5">
-                <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
-                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <h2 className="break-words text-xl font-semibold text-white">Profil leírás</h2>
-                      <p className="mt-1 break-words text-sm leading-6 text-white/60">
-                        
-                      </p>
+              <div className="min-w-0 space-y-12">
+                <div className="space-y-5">
+                  <div>
+                    <p className="lmr-kicker">Profil</p>
+                    <h2 className="lmr-title mt-4">{profile.ic_name ?? "Profil"}</h2>
+                  </div>
+
+                  {!canEdit ? (
+                    <p className="lmr-text">Itt megtekintheted a profilhoz tartozó adatokat.</p>
+                  ) : null}
+                </div>
+
+                {error ? (
+                  <div className="rounded-[20px] border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    {error}
+                  </div>
+                ) : null}
+
+                <section className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-white">Profil leírás</h3>
+                    <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+                  </div>
+
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="text-white/60 text-sm">
+                      {canEdit ? "" : ""}
                     </div>
 
                     {canEdit && !editingBio ? (
                       <button
                         type="button"
                         onClick={() => setEditingBio(true)}
-                        className="lmr-btn lmr-btn-primary shrink-0 rounded-2xl px-4 py-2.5 text-sm font-medium"
+                        className="lmr-btn lmr-btn-primary rounded-2xl px-5 py-2.5 text-sm font-medium"
                       >
                         Szerkesztés
                       </button>
@@ -781,10 +766,10 @@ export default function ProfilePage() {
                         onChange={(e) => setBioDraft(e.target.value)}
                         placeholder="Írj magadról pár sort..."
                         rows={8}
-                        className="mt-4 block min-h-[180px] w-full resize-y rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-white/20"
+                        className="mt-1 block min-h-[180px] w-full resize-y rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4 text-white outline-none transition placeholder:text-white/30 focus:border-white/20"
                       />
 
-                      <div className="mt-4 flex flex-wrap justify-end gap-3">
+                      <div className="mt-5 flex flex-wrap justify-end gap-3">
                         <button
                           type="button"
                           className="lmr-btn rounded-2xl px-4 py-2.5 text-sm font-medium"
@@ -805,8 +790,8 @@ export default function ProfilePage() {
                       </div>
                     </>
                   ) : (
-                    <div className="mt-4 overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4 text-white/85">
-                      <p className="break-words whitespace-pre-wrap leading-7">
+                    <div className="text-white/85">
+                      <p className="break-words whitespace-pre-wrap text-base leading-8">
                         {profile.bio?.trim() ? profile.bio : "—"}
                       </p>
                     </div>
@@ -814,28 +799,37 @@ export default function ProfilePage() {
                 </section>
 
                 {canSeeStats ? (
-                  <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
-                    <h2 className="break-words text-xl font-semibold text-white">Statisztika</h2>
-                    <p className="mt-1 break-words text-sm leading-6 text-white/60">
-                     
-                    </p>
+                  <section className="space-y-6">
+                    <div>
+                      <h3 className="text-2xl font-semibold text-white">Statisztika</h3>
+                      <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+                    </div>
 
-                    <div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-2">
-                      <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4">
-                        <div className="break-words text-xs uppercase tracking-[0.12em] text-white/52">
+                    <div className="grid gap-y-8 gap-x-10 sm:grid-cols-2 lg:grid-cols-3">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.12em] text-white/45">
                           Felvéve
                         </div>
-                        <div className="mt-2 break-words text-lg font-semibold leading-tight text-white">
+                        <div className="mt-3 text-2xl font-semibold text-white">
                           {ymd(profile.created_at)}
                         </div>
                       </div>
 
-                      <div className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4">
-                        <div className="break-words text-xs uppercase tracking-[0.12em] text-white/52">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.12em] text-white/45">
                           Aktív figyelmeztetések
                         </div>
-                        <div className="mt-2 break-words text-lg font-semibold leading-tight text-white">
+                        <div className="mt-3 text-2xl font-semibold text-white">
                           {warningsActiveCount}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.12em] text-white/45">
+                          Inaktivitás
+                        </div>
+                        <div className="mt-3 text-2xl font-semibold text-white">
+                          {inactivityText}
                         </div>
                       </div>
                     </div>
@@ -843,29 +837,28 @@ export default function ProfilePage() {
                 ) : null}
 
                 {canSeeWarnings ? (
-                  <section className="lmr-card min-w-0 overflow-hidden rounded-[28px] p-5 md:p-6">
-                    <h2 className="break-words text-xl font-semibold text-white">Figyelmeztetések</h2>
-                    <p className="mt-1 break-words text-sm leading-6 text-white/60">
-                      
-                    </p>
+                  <section className="space-y-6">
+                    <div>
+                      <h3 className="text-2xl font-semibold text-white">Figyelmeztetések</h3>
+                      <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+                    </div>
 
                     {warnings.length === 0 ? (
-                      <div className="lmr-empty-state mt-4 rounded-[24px] px-4 py-8 text-sm">
-                        Nincs figyelmeztetés.
-                      </div>
+                      <div className="text-base text-white/60">Nincs figyelmeztetés.</div>
                     ) : (
-                      <div className="mt-4 grid gap-3">
+                      <div className="space-y-6">
                         {warnings.map((w) => (
                           <div
                             key={w.id}
-                            className="lmr-surface-soft min-w-0 overflow-hidden rounded-[24px] p-4"
+                            className="border-b border-white/8 pb-6 last:border-b-0 last:pb-0"
                           >
-                            <div className="break-words text-base font-semibold leading-7 text-white">
+                            <div className="text-lg font-semibold leading-7 text-white">
                               {w.reason}
                             </div>
-                            <div className="mt-2 break-words text-xs leading-6 text-white/62">
-                              Kiállítva: {ymd(w.issued_at)} • Lejárat: {w.expires_at ? ymd(w.expires_at) : "—"} •
-                              Állapot: {w.is_active ? "Aktív" : "Inaktív"}
+                            <div className="mt-2 text-sm leading-7 text-white/62">
+                              Kiállítva: {ymd(w.issued_at)} • Lejárat:{" "}
+                              {w.expires_at ? ymd(w.expires_at) : "—"} • Állapot:{" "}
+                              {w.is_active ? "Aktív" : "Inaktív"}
                             </div>
                           </div>
                         ))}
@@ -893,9 +886,7 @@ export default function ProfilePage() {
               <div className="flex-1">
                 <div className="mb-3">
                   <div className="text-xl font-semibold text-white">Profilkép igazítása</div>
-                  <div className="mt-1 text-sm text-white/60">
-                    Húzd a képet, görgővel zoomolj.
-                  </div>
+                  <div className="mt-1 text-sm text-white/60">Húzd a képet, görgővel zoomolj.</div>
                 </div>
 
                 <div className="flex justify-center">
@@ -947,6 +938,7 @@ export default function ProfilePage() {
 
               <div className="w-full lg:w-[220px]">
                 <div className="text-sm font-medium text-white">Előnézet</div>
+
                 <div className="mt-3 flex justify-center lg:justify-start">
                   <div className="relative h-28 w-28 overflow-hidden rounded-full border border-white/15 bg-black">
                     <img
@@ -964,8 +956,6 @@ export default function ProfilePage() {
                     />
                   </div>
                 </div>
-
-                
 
                 <div className="mt-6 flex flex-col gap-3">
                   <button

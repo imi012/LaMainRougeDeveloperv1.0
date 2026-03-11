@@ -4,14 +4,20 @@
   --background: #060608;
   --foreground: #f5f7fb;
   --muted-foreground: rgba(245, 247, 251, 0.72);
-  --panel-bg: rgba(10, 10, 14, 0.66);
-  --panel-bg-strong: rgba(9, 9, 12, 0.82);
-  --panel-border: rgba(255, 255, 255, 0.1);
-  --panel-border-soft: rgba(255, 255, 255, 0.07);
-  --accent: rgba(255, 51, 102, 0.92);
-  --accent-soft: rgba(255, 51, 102, 0.16);
-  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.22);
-  --shadow-strong: 0 22px 80px rgba(0, 0, 0, 0.45);
+  --soft-foreground: rgba(245, 247, 251, 0.56);
+
+  --panel-bg: rgba(10, 10, 14, 0.52);
+  --panel-bg-soft: rgba(10, 10, 14, 0.34);
+  --panel-bg-strong: rgba(9, 9, 12, 0.78);
+
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --panel-border-soft: rgba(255, 255, 255, 0.05);
+
+  --accent: rgba(255, 62, 110, 0.92);
+  --accent-soft: rgba(255, 62, 110, 0.14);
+
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.16);
+  --shadow-strong: 0 20px 70px rgba(0, 0, 0, 0.34);
 }
 
 @theme inline {
@@ -35,9 +41,9 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   background:
-    linear-gradient(180deg, rgba(2, 2, 4, 0.82) 0%, rgba(3, 3, 5, 0.88) 100%),
-    radial-gradient(circle at top, rgba(255, 49, 96, 0.12), transparent 34%),
-    url("/lmr-bg-blur.png") center center / cover no-repeat fixed,
+    linear-gradient(180deg, rgba(2, 2, 4, 0.82) 0%, rgba(3, 3, 5, 0.9) 100%),
+    radial-gradient(circle at top, rgba(255, 49, 96, 0.1), transparent 34%),
+    url("/background.jpg") center center / cover no-repeat fixed,
     var(--background);
 }
 
@@ -47,8 +53,8 @@ body::before {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.35)),
-    radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.22) 74%, rgba(0, 0, 0, 0.45) 100%);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.34)),
+    radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.2) 74%, rgba(0, 0, 0, 0.44) 100%);
   z-index: -1;
 }
 
@@ -110,7 +116,7 @@ body > div [role="button"] {
 .lmr-app [role="button"]:hover,
 body > div button:hover,
 body > div [role="button"]:hover {
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
 }
 
 .lmr-app button:active,
@@ -119,6 +125,8 @@ body > div button:active,
 body > div [role="button"]:active {
   transform: translateY(1px);
 }
+
+/* ---------- FORM ELEMENTS ---------- */
 
 .lmr-app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .lmr-app textarea,
@@ -129,14 +137,12 @@ body > div select {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background-color: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.04) !important;
   color: var(--foreground) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 8px 24px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  box-shadow: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .lmr-app input::placeholder,
@@ -153,11 +159,8 @@ body > div input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):
 body > div textarea:focus,
 body > div select:focus {
   outline: none;
-  border-color: rgba(255, 90, 136, 0.48) !important;
-  box-shadow:
-    0 0 0 1px rgba(255, 90, 136, 0.36),
-    0 0 0 6px rgba(255, 90, 136, 0.1),
-    0 16px 36px rgba(0, 0, 0, 0.22);
+  border-color: rgba(255, 90, 136, 0.42) !important;
+  box-shadow: 0 0 0 1px rgba(255, 90, 136, 0.26), 0 0 0 5px rgba(255, 90, 136, 0.08);
 }
 
 /* SELECT FIX */
@@ -165,8 +168,8 @@ body > div select:focus {
 body > div select {
   color-scheme: dark;
   background-image:
-    linear-gradient(45deg, transparent 50%, rgba(255,255,255,0.8) 50%),
-    linear-gradient(135deg, rgba(255,255,255,0.8) 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, rgba(255, 255, 255, 0.8) 50%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.8) 50%, transparent 50%);
   background-position:
     calc(100% - 18px) calc(50% - 2px),
     calc(100% - 12px) calc(50% - 2px);
@@ -183,59 +186,50 @@ body > div select optgroup {
   color: #f5f7fb !important;
 }
 
-.lmr-app select option:checked,
-body > div select option:checked {
-  background: linear-gradient(180deg, rgba(255, 70, 120, 0.35), rgba(255, 70, 120, 0.18)) !important;
-  color: #ffffff !important;
-}
-
-.lmr-app select option:hover,
-body > div select option:hover {
-  background-color: #1a1c22 !important;
-  color: #ffffff !important;
-}
+/* ---------- TABLES ---------- */
 
 .lmr-app table,
 body > div table {
+  width: 100%;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 18px;
   border-collapse: separate;
   border-spacing: 0;
 }
 
 .lmr-app thead,
 body > div thead {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .lmr-app th,
 body > div th {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0.9rem 1rem;
-  font-size: 0.76rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.85rem 1rem;
+  font-size: 0.73rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.62);
 }
 
 .lmr-app td,
 body > div td {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   padding: 0.95rem 1rem;
   vertical-align: top;
 }
 
 .lmr-app tbody tr {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .lmr-app tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.028);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .lmr-app tbody tr:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(255, 255, 255, 0.032);
 }
 
 .lmr-app tbody tr:last-child td,
@@ -243,41 +237,179 @@ body > div tbody tr:last-child td {
   border-bottom: 0;
 }
 
+/* ---------- SURFACES ---------- */
+
 .lmr-app .lmr-surface,
 body > div .lmr-surface {
   border: 1px solid var(--panel-border);
-  background: linear-gradient(180deg, rgba(15, 15, 19, 0.78), rgba(10, 10, 13, 0.7));
+  background: linear-gradient(180deg, rgba(14, 14, 18, 0.56), rgba(10, 10, 13, 0.46));
   box-shadow: var(--shadow-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .lmr-app .lmr-surface-soft,
 body > div .lmr-surface-soft {
   border: 1px solid var(--panel-border-soft);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.03);
   box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .lmr-app .lmr-empty-state,
 body > div .lmr-empty-state {
-  border: 1px dashed rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.035);
-  color: rgba(255, 255, 255, 0.78);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.72);
   text-align: center;
 }
 
-@media (max-width: 900px) {
-  body {
-    background-attachment: scroll;
-    background-position: center top;
-  }
+/* ---------- NEW CLEAN SYSTEM ---------- */
+
+.lmr-page {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1rem;
 }
-/* =========================
-   LMR BUTTON SYSTEM
-   ========================= */
+
+.lmr-page-compact {
+  max-width: 1040px;
+}
+
+.lmr-page-wide {
+  max-width: 1320px;
+}
+
+.lmr-hero {
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.lmr-section {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lmr-section-soft {
+  padding: 1.25rem;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.lmr-card {
+  padding: 1.1rem 1.2rem;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.lmr-card-minimal {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lmr-stack {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.lmr-stack-sm {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.lmr-stack-lg {
+  display: grid;
+  gap: 2rem;
+}
+
+.lmr-title {
+  font-size: clamp(1.8rem, 4vw, 3.4rem);
+  line-height: 1.05;
+  font-weight: 700;
+  color: white;
+  letter-spacing: -0.03em;
+}
+
+.lmr-subtitle {
+  font-size: clamp(1.2rem, 2vw, 1.8rem);
+  line-height: 1.15;
+  font-weight: 600;
+  color: white;
+}
+
+.lmr-kicker {
+  font-size: 0.73rem;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.lmr-text {
+  color: rgba(255, 255, 255, 0.76);
+  line-height: 1.9;
+}
+
+.lmr-text-soft {
+  color: rgba(255, 255, 255, 0.58);
+  line-height: 1.75;
+}
+
+.lmr-divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+}
+
+.lmr-accent-line {
+  height: 2px;
+  width: 3rem;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.9);
+}
+
+.lmr-chip {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.74);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.lmr-grid-2 {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lmr-grid-3 {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lmr-grid-auto {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+/* ---------- BUTTONS ---------- */
 
 .lmr-btn {
   display: inline-flex;
@@ -285,18 +417,16 @@ body > div .lmr-empty-state {
   justify-content: center;
   gap: 0.5rem;
   border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 0.65rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1;
   color: #f5f7fb;
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 10px 30px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease,
@@ -307,9 +437,7 @@ body > div .lmr-empty-state {
 }
 
 .lmr-btn:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 14px 34px rgba(0, 0, 0, 0.24);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .lmr-btn:active {
@@ -320,67 +448,61 @@ body > div .lmr-empty-state {
   opacity: 0.55;
   cursor: not-allowed;
   transform: none;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.02),
-    0 6px 18px rgba(0, 0, 0, 0.12);
 }
 
 .lmr-btn-primary {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
 }
 
 .lmr-btn-primary:hover {
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.12);
 }
 
 .lmr-btn-danger {
-  border-color: rgba(239, 68, 68, 0.55);
-  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.42);
+  background: rgba(239, 68, 68, 0.1);
   color: rgb(252, 165, 165);
 }
 
 .lmr-btn-danger:hover {
-  border-color: rgba(248, 113, 113, 0.75);
-  background: rgba(239, 68, 68, 0.18);
-  color: rgb(254, 202, 202);
+  border-color: rgba(248, 113, 113, 0.62);
+  background: rgba(239, 68, 68, 0.15);
 }
 
 .lmr-btn-success {
-  border-color: rgba(34, 197, 94, 0.45);
-  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.38);
+  background: rgba(34, 197, 94, 0.1);
   color: rgb(134, 239, 172);
 }
 
 .lmr-btn-success:hover {
-  border-color: rgba(74, 222, 128, 0.65);
-  background: rgba(34, 197, 94, 0.18);
-  color: rgb(220, 252, 231);
+  border-color: rgba(74, 222, 128, 0.56);
+  background: rgba(34, 197, 94, 0.14);
 }
 
 .lmr-btn-warning {
-  border-color: rgba(245, 158, 11, 0.45);
-  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.38);
+  background: rgba(245, 158, 11, 0.1);
   color: rgb(253, 224, 71);
 }
 
 .lmr-btn-warning:hover {
-  border-color: rgba(251, 191, 36, 0.62);
-  background: rgba(245, 158, 11, 0.18);
-  color: rgb(254, 240, 138);
+  border-color: rgba(251, 191, 36, 0.56);
+  background: rgba(245, 158, 11, 0.14);
 }
 
 .lmr-btn-ghost {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
   color: rgba(255, 255, 255, 0.88);
 }
 
 .lmr-btn-ghost:hover {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
 }
 
@@ -393,4 +515,22 @@ body > div .lmr-empty-state {
 .lmr-btn-lg {
   padding: 0.8rem 1.15rem;
   font-size: 0.95rem;
+}
+
+@media (max-width: 1024px) {
+  .lmr-grid-2,
+  .lmr-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  body {
+    background-attachment: scroll;
+    background-position: center top;
+  }
+
+  .lmr-page {
+    padding: 0.75rem;
+  }
 }
