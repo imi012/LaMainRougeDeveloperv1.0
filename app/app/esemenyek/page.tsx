@@ -247,8 +247,8 @@ export default function EsemenyekPage() {
       }));
 
       setEvents(eventRows);
-      setParticipants(((json?.participants as EventParticipantRow[] | null) ?? []));
-      setImages(((json?.images as EventImageRow[] | null) ?? []));
+      setParticipants((json?.participants as EventParticipantRow[] | null) ?? []);
+      setImages((json?.images as EventImageRow[] | null) ?? []);
       setLoading(false);
     } catch (e: any) {
       setError(e?.message || "Nem sikerült betölteni az eseményeket.");
@@ -493,18 +493,18 @@ export default function EsemenyekPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
-      <section className="lmr-surface-soft rounded-[28px] p-6 md:p-7">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">La Main Rouge</div>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Események</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/70">
-              Események létrehozása, résztvevők kezelése, pending értékelések és képek kezelése egységes felületen.
-              Importálható tagok: {importableMembers.length} fő
-              {me ? <span className="ml-2 text-white/50">(Te: status={me.status}, role={me.site_role})</span> : null}
-            </p>
-          </div>
+    <div className="mx-auto w-full max-w-7xl space-y-8">
+      <section className="space-y-3">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">La Main Rouge</div>
+        <h1 className="text-3xl font-bold tracking-tight text-white">Események</h1>
+        <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+        <p className="max-w-3xl text-sm leading-7 text-white/70">
+         
+          Importálható tagok: {importableMembers.length} fő
+          {me ? <span className="ml-2 text-white/50"></span> : null}
+        </p>
+
+        <div>
           <button
             onClick={() => void loadAll()}
             className="rounded-2xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-white hover:bg-white/[0.09]"
@@ -516,24 +516,30 @@ export default function EsemenyekPage() {
       </section>
 
       {error && (
-        <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>
+        <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {error}
+        </div>
       )}
 
-      <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6 space-y-4">
-        <h2 className="font-semibold">Új esemény</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Új esemény</h2>
+          <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Esemény címe"
-            className="w-full rounded-2xl border px-3.5 py-3"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-3.5 py-3 text-white outline-none transition focus:border-red-500/50"
           />
           <select
             value={newHolder}
             onChange={(e) => setNewHolder(e.target.value)}
-            className="w-full rounded-2xl border px-3.5 py-3"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-3.5 py-3 text-white outline-none transition focus:border-red-500/50"
           >
-            <option value="">Ki tartotta?</option>
+            <option value="">Szervező</option>
             {holderMembers.map((m) => (
               <option key={m.user_id} value={m.user_id}>
                 {m.ic_name || "(nincs név)"}
@@ -548,242 +554,268 @@ export default function EsemenyekPage() {
             {busy === "create" ? "Létrehozás…" : "Létrehozás"}
           </button>
         </div>
-        <div className="text-xs leading-6 text-white/55">
-          Létrehozás után a névsorba automatikusan beimportálódik minden pending, active és leadership tag.
-        </div>
-      </div>
 
-      <div className="space-y-3">
+        <div className="text-xs leading-6 text-white/55">
+          
+        </div>
+      </section>
+
+      <section className="space-y-5">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Eseménylista</h2>
+          <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+        </div>
+
         {events.length === 0 ? (
           <div className="text-white/70">Még nincs esemény.</div>
         ) : (
-          events.map((e) => {
-            const isOpen = expandedId === e.id;
-            const holderName = e.holder_user_id ? memberName.get(e.holder_user_id) : "—";
-            const ps = participantsFor(e.id);
-            const ims = imagesFor(e.id);
-            const totals = totalsFor(e.id);
-            const isLocked = !!e.is_closed;
-            const canManageThisEvent = canManageEvent(e);
+          <div className="space-y-6">
+            {events.map((e) => {
+              const isOpen = expandedId === e.id;
+              const holderName = e.holder_user_id ? memberName.get(e.holder_user_id) : "—";
+              const ps = participantsFor(e.id);
+              const ims = imagesFor(e.id);
+              const totals = totalsFor(e.id);
+              const isLocked = !!e.is_closed;
+              const canManageThisEvent = canManageEvent(e);
 
-            return (
-              <div key={e.id} className="lmr-surface-soft overflow-hidden rounded-[26px]">
-                <button
-                  onClick={() => setExpandedId(isOpen ? null : e.id)}
-                  className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left hover:bg-white/[0.04]"
-                >
-                  <div className="min-w-0">
-                    <div className="font-semibold truncate">
-                      {e.name || "(Névtelen esemény)"}
-                      {isLocked ? <span className="text-xs text-red-300 ml-2">(LEZÁRVA)</span> : null}
-                    </div>
-                    <div className="text-xs text-white/60 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                      <span>Ki tartotta: {holderName || "—"}</span>
-                      <span>Létrehozva: {formatDateTime(e.created_at)}</span>
-                      <span>Létrehozó: {memberName.get(e.created_by || "") || "—"}</span>
-                      <span>Részt vett: {totals.attendedCount} fő</span>
-                      <span>Online volt: {totals.onlineCount} fő</span>
-                      <span>Pending értékelés: {totals.pendingRatedCount} db</span>
-                      <span>Képek: {ims.length} db</span>
-                    </div>
-                  </div>
-                  <div className="text-sm text-white/70">{isOpen ? "▲" : "▼"}</div>
-                </button>
+              return (
+                <section key={e.id} className="border-b border-red-900/40 pb-6 last:border-b-0 last:pb-0">
+                  <button
+                    onClick={() => setExpandedId(isOpen ? null : e.id)}
+                    className="flex w-full items-start justify-between gap-4 py-1 text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-lg font-semibold text-white">
+                          {e.name || "(Névtelen esemény)"}
+                        </h3>
+                        {isLocked ? (
+                          <span className="rounded-full border border-red-400/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-200">
+                            LEZÁRVA
+                          </span>
+                        ) : null}
+                      </div>
 
-                {isOpen && (
-                  <div className="space-y-6 px-5 pb-5 pt-1 md:px-6 md:pb-6">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <h3 className="font-semibold">Taglista ({ps.length} sor)</h3>
-
-                      <div className="flex items-center gap-3 flex-wrap justify-end">
-                        {!canManageThisEvent && (
-                          <div className="text-xs text-yellow-200 rounded border border-yellow-500/20 bg-yellow-500/10 px-3 py-2">
-                            Ezt az eseményt csak olvasni tudod. Sajátként létrehozott eseményt szerkeszthetsz.
-                          </div>
-                        )}
-
-                        <button
-                          onClick={() => void setClosed(e.id, !e.is_closed)}
-                          disabled={!canManageThisEvent || busy === `close:${e.id}`}
-                          className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-60"
-                        >
-                          {busy === `close:${e.id}` ? "Mentés…" : e.is_closed ? "Feloldás" : "Lezárás"}
-                        </button>
-
-                        <button
-                          onClick={() => void deleteEvent(e.id)}
-                          disabled={!canManageThisEvent || busy === `del:${e.id}`}
-                          className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
-                        >
-                          {busy === `del:${e.id}` ? "Törlés…" : "Esemény törlése"}
-                        </button>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
+                        <span>Szervező: {holderName || "—"}</span>
+                        <span>Létrehozva: {formatDateTime(e.created_at)}</span>
+                        <span>Létrehozó: {memberName.get(e.created_by || "") || "—"}</span>
+                        <span>Részt vett: {totals.attendedCount} fő</span>
+                        <span>Online volt: {totals.onlineCount} fő</span>
+                        <span>Pending értékelés: {totals.pendingRatedCount} db</span>
+                        <span>Képek: {ims.length} db</span>
                       </div>
                     </div>
 
-                    {isLocked && (
-                      <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/70">
-                        Az esemény le van zárva: a pipálás, az értékelés és a képfeltöltés le van tiltva.
-                      </div>
-                    )}
+                    <div className="pt-1 text-sm text-white/70">{isOpen ? "▲" : "▼"}</div>
+                  </button>
 
-                    {ps.length === 0 ? (
-                      <div className="text-white/70">Még nincs importált névsor ennél az eseménynél.</div>
-                    ) : (
-                      <div className="overflow-x-auto rounded-[24px] border border-white/10">
-                        <table className="w-full text-sm">
-                          <thead className="bg-white/5 text-white/70">
-                            <tr>
-                              <th className="text-left p-2">Név</th>
-                              <th className="text-left p-2">Részt vett</th>
-                              <th className="text-left p-2">Online volt</th>
-                              <th className="text-left p-2">Értékelés</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {ps
-                              .slice()
-                              .sort((x, y) => (memberName.get(x.user_id) || "").localeCompare(memberName.get(y.user_id) || ""))
-                              .map((p) => {
-                                const n = memberName.get(p.user_id) || "(nincs név)";
-                                const status = memberStatus.get(p.user_id) || "";
-                                const isPending = status === "pending";
-                                const attendingBusy = busy === `att:${e.id}:${p.user_id}`;
-                                const onlineBusy = busy === `on:${e.id}:${p.user_id}`;
-                                const pendingBusy = busy === `pf:${e.id}:${p.user_id}`;
+                  {isOpen && (
+                    <div className="space-y-8 pt-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-base font-semibold text-white">Taglista ({ps.length} sor)</h4>
+                          <div className="mt-3 h-[2px] w-8 rounded-full bg-red-600/80" />
+                        </div>
 
-                                return (
-                                  <tr key={p.user_id} className="border-t border-white/10">
-                                    <td className="p-2">
-                                      <div className="font-medium">{n}</div>
-                                      <div className="text-xs text-white/50">Státusz: {status || "—"}</div>
-                                    </td>
-                                    <td className="p-2">
-                                      <label className="inline-flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={p.attended}
-                                          disabled={attendingBusy || isLocked || !canManageThisEvent}
-                                          onChange={(ev) => void setAttended(e.id, p.user_id, ev.target.checked)}
-                                        />
-                                        <span className="text-white/80">{p.attended ? "Igen" : "Nem"}</span>
-                                      </label>
-                                    </td>
-                                    <td className="p-2">
-                                      <label className="inline-flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={p.was_online}
-                                          disabled={onlineBusy || isLocked || !canManageThisEvent}
-                                          onChange={(ev) => void setWasOnline(e.id, p.user_id, ev.target.checked)}
-                                        />
-                                        <span className="text-white/80">{p.was_online ? "Igen" : "Nem"}</span>
-                                      </label>
-                                    </td>
-                                    <td className="p-2">
-                                      {isPending ? (
-                                        <select
-                                          value={p.pending_feedback ?? ""}
-                                          disabled={pendingBusy || isLocked || !canManageThisEvent}
-                                          onChange={(ev) =>
-                                            void setPendingFeedback(
-                                              e.id,
-                                              p.user_id,
-                                              (ev.target.value || null) as PendingFeedback
-                                            )
-                                          }
-                                          className="w-full max-w-[220px] px-3 py-2 rounded bg-black/30 border border-white/10"
-                                        >
-                                          <option value="">Nincs megadva</option>
-                                          {PENDING_FEEDBACK_OPTIONS.map((option) => (
-                                            <option key={option.value} value={option.value}>
-                                              {option.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <span className="text-white/50">{pendingFeedbackLabel(p.pending_feedback)}</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                        <div className="flex flex-wrap items-center gap-3">
+                          {!canManageThisEvent && (
+                            <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
+                              Ezt az eseményt csak olvasni tudod. Sajátként létrehozott eseményt szerkeszthetsz.
+                            </div>
+                          )}
 
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <h3 className="font-semibold">Képek / Imgur linkek</h3>
-                        <div className="text-xs leading-6 text-white/55">{ims.length} db</div>
+                          <button
+                            onClick={() => void setClosed(e.id, !e.is_closed)}
+                            disabled={!canManageThisEvent || busy === `close:${e.id}`}
+                            className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm text-white hover:bg-white/[0.08] disabled:opacity-60"
+                          >
+                            {busy === `close:${e.id}` ? "Mentés…" : e.is_closed ? "Feloldás" : "Lezárás"}
+                          </button>
+
+                          <button
+                            onClick={() => void deleteEvent(e.id)}
+                            disabled={!canManageThisEvent || busy === `del:${e.id}`}
+                            className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+                          >
+                            {busy === `del:${e.id}` ? "Törlés…" : "Esemény törlése"}
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
-                        <input
-                          value={imgurDraft[e.id] ?? ""}
-                          onChange={(ev) => setImgurDraft((prev) => ({ ...prev, [e.id]: ev.target.value }))}
-                          placeholder="https://imgur.com/..."
-                          className="w-full rounded-2xl border px-3.5 py-3"
-                          disabled={isLocked || !canManageThisEvent}
-                        />
-                        <button
-                          onClick={() => void addImgur(e.id)}
-                          disabled={busy === `img:${e.id}` || isLocked || !canManageThisEvent}
-                          className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
-                        >
-                          {busy === `img:${e.id}` ? "Mentés…" : "Imgur link hozzáadása"}
-                        </button>
-                      </div>
+                      {isLocked && (
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/70">
+                          Az esemény le van zárva: a pipálás, az értékelés és a képfeltöltés le van tiltva.
+                        </div>
+                      )}
 
-                      <div className="rounded border border-white/10 overflow-hidden">
-                        {ims.length === 0 ? (
-                          <div className="p-3 text-white/70">Még nincs képlink rögzítve.</div>
-                        ) : (
+                      {ps.length === 0 ? (
+                        <div className="text-white/70">Még nincs importált névsor ennél az eseménynél.</div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-2xl border border-white/10">
                           <table className="w-full text-sm">
                             <thead className="bg-white/5 text-white/70">
                               <tr>
-                                <th className="text-left p-2">Idő</th>
-                                <th className="text-left p-2">Link</th>
-                                <th className="text-right p-2">Művelet</th>
+                                <th className="p-3 text-left">Név</th>
+                                <th className="p-3 text-left">Részt vett</th>
+                                <th className="p-3 text-left">Online volt</th>
+                                <th className="p-3 text-left">Értékelés</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {ims.map((img) => (
-                                <tr key={img.id} className="border-t border-white/10">
-                                  <td className="p-2 text-white/70">{formatDateTime(img.created_at)}</td>
-                                  <td className="p-2">
-                                    <a
-                                      href={img.imgur_url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-blue-300 hover:text-blue-200 underline break-all"
-                                    >
-                                      {img.imgur_url}
-                                    </a>
-                                  </td>
-                                  <td className="p-2 text-right">
-                                    <button
-                                      onClick={() => void deleteImgur(img.id)}
-                                      disabled={busy === `dimg:${img.id}` || isLocked || !canManageThisEvent}
-                                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/15 disabled:opacity-50"
-                                    >
-                                      {busy === `dimg:${img.id}` ? "Törlés…" : "Törlés"}
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
+                              {ps
+                                .slice()
+                                .sort((x, y) =>
+                                  (memberName.get(x.user_id) || "").localeCompare(memberName.get(y.user_id) || "")
+                                )
+                                .map((p) => {
+                                  const n = memberName.get(p.user_id) || "(nincs név)";
+                                  const status = memberStatus.get(p.user_id) || "";
+                                  const isPending = status === "pending";
+                                  const attendingBusy = busy === `att:${e.id}:${p.user_id}`;
+                                  const onlineBusy = busy === `on:${e.id}:${p.user_id}`;
+                                  const pendingBusy = busy === `pf:${e.id}:${p.user_id}`;
+
+                                  return (
+                                    <tr key={p.user_id} className="border-t border-white/10">
+                                      <td className="p-3">
+                                        <div className="font-medium text-white">{n}</div>
+                                        <div className="text-xs text-white/50">Státusz: {status || "—"}</div>
+                                      </td>
+                                      <td className="p-3">
+                                        <label className="inline-flex items-center gap-2">
+                                          <input
+                                            type="checkbox"
+                                            checked={p.attended}
+                                            disabled={attendingBusy || isLocked || !canManageThisEvent}
+                                            onChange={(ev) => void setAttended(e.id, p.user_id, ev.target.checked)}
+                                          />
+                                          <span className="text-white/80">{p.attended ? "Igen" : "Nem"}</span>
+                                        </label>
+                                      </td>
+                                      <td className="p-3">
+                                        <label className="inline-flex items-center gap-2">
+                                          <input
+                                            type="checkbox"
+                                            checked={p.was_online}
+                                            disabled={onlineBusy || isLocked || !canManageThisEvent}
+                                            onChange={(ev) => void setWasOnline(e.id, p.user_id, ev.target.checked)}
+                                          />
+                                          <span className="text-white/80">{p.was_online ? "Igen" : "Nem"}</span>
+                                        </label>
+                                      </td>
+                                      <td className="p-3">
+                                        {isPending ? (
+                                          <select
+                                            value={p.pending_feedback ?? ""}
+                                            disabled={pendingBusy || isLocked || !canManageThisEvent}
+                                            onChange={(ev) =>
+                                              void setPendingFeedback(
+                                                e.id,
+                                                p.user_id,
+                                                (ev.target.value || null) as PendingFeedback
+                                              )
+                                            }
+                                            className="w-full max-w-[220px] rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white"
+                                          >
+                                            <option value="">Nincs megadva</option>
+                                            {PENDING_FEEDBACK_OPTIONS.map((option) => (
+                                              <option key={option.value} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        ) : (
+                                          <span className="text-white/50">
+                                            {pendingFeedbackLabel(p.pending_feedback)}
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                             </tbody>
                           </table>
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <h4 className="text-base font-semibold text-white">Képek / Imgur linkek</h4>
+                            <div className="mt-3 h-[2px] w-8 rounded-full bg-red-600/80" />
+                          </div>
+                          <div className="text-xs leading-6 text-white/55">{ims.length} db</div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+                          <input
+                            value={imgurDraft[e.id] ?? ""}
+                            onChange={(ev) => setImgurDraft((prev) => ({ ...prev, [e.id]: ev.target.value }))}
+                            placeholder="https://imgur.com/..."
+                            className="w-full rounded-2xl border border-white/10 bg-black/20 px-3.5 py-3 text-white outline-none transition focus:border-red-500/50"
+                            disabled={isLocked || !canManageThisEvent}
+                          />
+                          <button
+                            onClick={() => void addImgur(e.id)}
+                            disabled={busy === `img:${e.id}` || isLocked || !canManageThisEvent}
+                            className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+                          >
+                            {busy === `img:${e.id}` ? "Mentés…" : "Imgur link hozzáadása"}
+                          </button>
+                        </div>
+
+                        {ims.length === 0 ? (
+                          <div className="text-white/70">Még nincs képlink rögzítve.</div>
+                        ) : (
+                          <div className="overflow-x-auto rounded-2xl border border-white/10">
+                            <table className="w-full text-sm">
+                              <thead className="bg-white/5 text-white/70">
+                                <tr>
+                                  <th className="p-3 text-left">Idő</th>
+                                  <th className="p-3 text-left">Link</th>
+                                  <th className="p-3 text-right">Művelet</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ims.map((img) => (
+                                  <tr key={img.id} className="border-t border-white/10">
+                                    <td className="p-3 text-white/70">{formatDateTime(img.created_at)}</td>
+                                    <td className="p-3">
+                                      <a
+                                        href={img.imgur_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="break-all text-blue-300 underline hover:text-blue-200"
+                                      >
+                                        {img.imgur_url}
+                                      </a>
+                                    </td>
+                                    <td className="p-3 text-right">
+                                      <button
+                                        onClick={() => void deleteImgur(img.id)}
+                                        disabled={busy === `dimg:${img.id}` || isLocked || !canManageThisEvent}
+                                        className="rounded-xl bg-white/10 px-3 py-1.5 text-white hover:bg-white/15 disabled:opacity-50"
+                                      >
+                                        {busy === `dimg:${img.id}` ? "Törlés…" : "Törlés"}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            );
-          })
+                  )}
+                </section>
+              );
+            })}
+          </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

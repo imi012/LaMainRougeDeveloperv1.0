@@ -37,6 +37,7 @@ const PENDING_APP_PATHS = new Set([
   "/app/karaktertortenet",
   "/app/skinek",
   "/app/szabalyzat",
+  "/app/szotar",
 ]);
 
 const ACTIVE_BASE_APP_PATHS = new Set([
@@ -53,6 +54,7 @@ const ACTIVE_BASE_APP_PATHS = new Set([
   "/app/parkolas",
   "/app/skinek",
   "/app/szabalyzat",
+  "/app/szotar",
 ]);
 
 const LEADERSHIP_APP_PATHS = new Set([
@@ -133,6 +135,10 @@ export function canAccessAuditLog(profile: PermissionProfile) {
 
 export function canViewActions(profile: PermissionProfile) {
   return canUseMemberFeatures(profile);
+}
+
+export function canViewDictionary(profile: PermissionProfile) {
+  return isPendingProfile(profile) || isActiveProfile(profile) || isLeadershipProfile(profile);
 }
 
 export function canViewEvents(profile: PermissionProfile, rankName?: string | null) {
@@ -220,6 +226,7 @@ export function getMenuOptionsForProfile(profile: PermissionProfile, rankName?: 
     showEvents: canViewEvents(profile, rankName),
     showLeadership: canAccessLeadership(profile),
     showAuditLog: canAccessAuditLog(profile),
+    showDictionary: canViewDictionary(profile),
   };
 }
 
@@ -233,6 +240,7 @@ export function evaluatePermissions(profile: PermissionProfile, context: Permiss
     canAccessLeadership: canAccessLeadership(profile),
     canAccessAuditLog: canAccessAuditLog(profile),
     canViewActions: canViewActions(profile),
+    canViewDictionary: canViewDictionary(profile),
     canViewEvents: canViewEvents(profile, rankName),
     canCreateAction: canCreateAction(profile, rankName),
     canManageAction: canManageAction(profile, rankName),

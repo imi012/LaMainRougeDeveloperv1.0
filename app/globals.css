@@ -265,22 +265,35 @@ body > div .lmr-empty-state {
   text-align: center;
 }
 
-/* ---------- NEW CLEAN SYSTEM ---------- */
+/* ---------- APP CONTAINERS ---------- */
 
-.lmr-page {
+.lmr-shell-container {
   width: 100%;
-  max-width: 1180px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.lmr-page,
+.lmr-page-compact,
+.lmr-page-wide {
+  width: 100%;
   margin: 0 auto;
   padding: 1rem;
 }
 
+.lmr-page {
+  max-width: 1160px;
+}
+
 .lmr-page-compact {
-  max-width: 1040px;
+  max-width: 980px;
 }
 
 .lmr-page-wide {
   max-width: 1320px;
 }
+
+/* ---------- NEW CLEAN SYSTEM ---------- */
 
 .lmr-hero {
   background: none;
@@ -530,7 +543,13 @@ body > div .lmr-empty-state {
     background-position: center top;
   }
 
-  .lmr-page {
+  .lmr-page,
+  .lmr-page-compact,
+  .lmr-page-wide {
     padding: 0.75rem;
+  }
+
+  .lmr-shell-container {
+    max-width: 100%;
   }
 }

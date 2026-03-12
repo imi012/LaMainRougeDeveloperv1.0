@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import DecisionBadge from "@/app/app/_components/decision-badge";
+import RankBadge from "@/app/app/_components/rank-badge";
 
 type MyProfile = {
   user_id: string;
@@ -167,7 +168,6 @@ type BlacklistRow = {
   created_by: string | null;
 };
 
-
 type TgfNoteRow = {
   id?: string;
   user_id: string;
@@ -215,6 +215,7 @@ function formatMoney(value: string | null | undefined) {
   if (!digits) return "—";
   return `${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".")}$`;
 }
+
 function formatDateOnly(dateString?: string | null) {
   if (!dateString) return "—";
   return dateString.split("T")[0];
@@ -224,6 +225,7 @@ function toDateInputValue(dateString?: string | null) {
   if (!dateString) return "";
   return String(dateString).slice(0, 10);
 }
+
 function isInviteActive(row: InviteRow) {
   if (row.revoked) return false;
   if (row.max_uses != null && row.uses != null && row.uses >= row.max_uses) return false;
@@ -269,7 +271,6 @@ function ticketTypeLabel(t: TicketRow) {
   if (type === "nevvaltas" || type === "namechange") return "Névváltás";
   return type ? type : "—";
 }
-
 
 function statusBadgeStyle(status: string | null | undefined) {
   switch ((status || "").toLowerCase()) {
@@ -342,11 +343,14 @@ function activeInactivityBadge(user: UserRow) {
 
 function Badge({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${className}`.trim()}>
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${className}`.trim()}
+    >
       {children}
     </span>
   );
 }
+
 function getTicketImgurUrl(t: TicketRow) {
   const a = (t.sanction_imgur_url || "").trim();
   if (a) return a;
@@ -405,6 +409,7 @@ export default function VezetosegPage() {
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(1);
   const pageSize = 10;
+
   const [leadandoDashboardRows, setLeadandoDashboardRows] = useState<LeadandoDashboardRow[]>([]);
   const [leadandoDeadlineDrafts, setLeadandoDeadlineDrafts] = useState<Record<string, string>>({});
   const [leadandoDeadlineEditing, setLeadandoDeadlineEditing] = useState<Record<string, boolean>>({});
@@ -445,6 +450,11 @@ export default function VezetosegPage() {
     return `rounded-lg border px-3 py-1.5 text-xs ${
       active ? "bg-red-600/80 border-red-500" : "bg-white/5 border-white/10 hover:bg-white/10"
     }`;
+  }
+
+  function getRankName(rankId: string | null | undefined) {
+    if (!rankId) return null;
+    return ranks.find((r) => r.id === rankId)?.name ?? "Törölt rang";
   }
 
   async function authHeaders(extra?: HeadersInit) {
@@ -627,7 +637,9 @@ export default function VezetosegPage() {
         body: JSON.stringify({ id: submissionId, approved_until: normalized }),
       });
 
-      const approvedUntilIso = json?.approved_until ? String(json.approved_until) : new Date(`${normalized}T23:59:59`).toISOString();
+      const approvedUntilIso = json?.approved_until
+        ? String(json.approved_until)
+        : new Date(`${normalized}T23:59:59`).toISOString();
 
       setLeadando((prev) =>
         prev.map((l) =>
@@ -645,12 +657,13 @@ export default function VezetosegPage() {
             ? {
                 ...row,
                 leadando_due_at: approvedUntilIso,
-                latest_submission: row.latest_submission && row.latest_submission.id === submissionId
-                  ? {
-                      ...row.latest_submission,
-                      approved_until: approvedUntilIso,
-                    }
-                  : row.latest_submission,
+                latest_submission:
+                  row.latest_submission && row.latest_submission.id === submissionId
+                    ? {
+                        ...row.latest_submission,
+                        approved_until: approvedUntilIso,
+                      }
+                    : row.latest_submission,
               }
             : row
         )
@@ -1086,6 +1099,7 @@ export default function VezetosegPage() {
       setError(e?.message ?? "Hiba történt.");
     }
   }
+
   async function loadTgfRows() {
     try {
       const json = await apiFetch("/api/admin/tgf/list");
@@ -1126,7 +1140,6 @@ export default function VezetosegPage() {
     }
   }
 
-
   async function openInboxItem(row: UnifiedInboxRow) {
     if (row.inbox_type === "leadando") {
       setError(null);
@@ -1153,7 +1166,9 @@ export default function VezetosegPage() {
     setTgfDraft("");
     setIsEditingTgfDetail(false);
     setSummary(null);
-    setUserPanelTab(row.inbox_type === "ticket" ? "tickets" : row.inbox_type === "service" ? "service" : "lore");
+    setUserPanelTab(
+      row.inbox_type === "ticket" ? "tickets" : row.inbox_type === "service" ? "service" : "lore"
+    );
     setError(null);
     setBusy(`open:${profile.user_id}`);
     setTab("users");
@@ -1274,7 +1289,15 @@ export default function VezetosegPage() {
 
   useEffect(() => {
     const incomingTab = searchParams.get("tab");
-    if (incomingTab === "invites" || incomingTab === "users" || incomingTab === "leadandok" || incomingTab === "kerdoivek" || incomingTab === "tgf" || incomingTab === "blacklist" || incomingTab === "kezelo") {
+    if (
+      incomingTab === "invites" ||
+      incomingTab === "users" ||
+      incomingTab === "leadandok" ||
+      incomingTab === "kerdoivek" ||
+      incomingTab === "tgf" ||
+      incomingTab === "blacklist" ||
+      incomingTab === "kezelo"
+    ) {
       setTab(incomingTab);
     }
   }, [searchParams]);
@@ -1326,11 +1349,18 @@ export default function VezetosegPage() {
       <section className="lmr-surface-soft rounded-[28px] p-6 md:p-7">
         <div className="flex flex-col gap-4 md:flex-row md:items-start">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">La Main Rouge</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">
+              La Main Rouge
+            </div>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Vezetőség</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/70">Vezetőségi kezelőfelület, meghívókódokkal, felhasználókezeléssel, beérkezettekkel, TGF-fel és blacklist nézettel.</p>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/70">
+              Vezetőségi kezelőfelület, meghívókódokkal, felhasználókezeléssel,
+              beérkezettekkel, TGF-fel és blacklist nézettel.
+            </p>
           </div>
-          <div className="ml-auto text-sm text-white/55">Most service-role API-kal megy, hogy stabilan működjön.</div>
+          <div className="ml-auto text-sm text-white/55">
+            Most service-role API-kal megy, hogy stabilan működjön.
+          </div>
         </div>
       </section>
 
@@ -1536,9 +1566,7 @@ export default function VezetosegPage() {
                   </tr>
                 ) : (
                   users.map((u) => {
-                    const rankName =
-                      ranks.find((r) => r.id === u.rank_id)?.name ??
-                      (u.rank_id ? "Törölt rang" : "—");
+                    const rankName = getRankName(u.rank_id);
                     const isOpen = selectedUser?.user_id === u.user_id;
                     const isBusy = !token || busy === `open:${u.user_id}`;
 
@@ -1552,9 +1580,15 @@ export default function VezetosegPage() {
                         }}
                       >
                         <td className="px-3 py-2">{u.ic_name || "—"}</td>
-                        <td className="px-3 py-2"><Badge className={statusBadgeStyle(u.status)}>{prettyStatus(u.status)}</Badge></td>
-                        <td className="px-3 py-2"><Badge className={roleBadgeStyle(u.site_role)}>{prettyRole(u.site_role)}</Badge></td>
-                        <td className="px-3 py-2">{rankName}</td>
+                        <td className="px-3 py-2">
+                          <Badge className={statusBadgeStyle(u.status)}>{prettyStatus(u.status)}</Badge>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge className={roleBadgeStyle(u.site_role)}>{prettyRole(u.site_role)}</Badge>
+                        </td>
+                        <td className="px-3 py-2">
+                          {rankName ? <RankBadge name={rankName} /> : "—"}
+                        </td>
                         <td className="px-3 py-2">{fmt(u.created_at)}</td>
                         <td className="px-3 py-2">{formatDateOnly(u.leadando_due_at)}</td>
                         <td className="px-3 py-2">{activeInactivityBadge(u)}</td>
@@ -1596,9 +1630,16 @@ export default function VezetosegPage() {
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <Badge className={statusBadgeStyle(selectedUser.status)}>{prettyStatus(selectedUser.status)}</Badge>
                         <Badge className={roleBadgeStyle(selectedUser.site_role)}>{prettyRole(selectedUser.site_role)}</Badge>
-                        {summary?.is_blacklisted ? <Badge className="border-red-500/30 bg-red-500/15 text-red-200">Blacklisten</Badge> : null}
+                        {getRankName(selectedUser.rank_id) ? <RankBadge name={getRankName(selectedUser.rank_id)} /> : null}
+                        {summary?.is_blacklisted ? (
+                          <Badge className="border-red-500/30 bg-red-500/15 text-red-200">
+                            Blacklisten
+                          </Badge>
+                        ) : null}
                       </div>
-                      <div className="mt-2 text-sm opacity-70">Discord név: {summary?.discord_name || selectedUser.discord_name || "—"}</div>
+                      <div className="mt-2 text-sm opacity-70">
+                        Discord név: {summary?.discord_name || selectedUser.discord_name || "—"}
+                      </div>
                       <div className="mt-1 text-sm opacity-70">User ID: {selectedUser.user_id}</div>
 
                       <button
@@ -1743,13 +1784,19 @@ export default function VezetosegPage() {
                   <div className="lmr-surface-soft rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Karaktertörténet</div>
                     <div className="mt-2 text-lg font-semibold">
-                      {summary?.lore_submitted ? <DecisionBadge value={summary?.lore_approved ? "approved" : "pending"} /> : "Nincs"}
+                      {summary?.lore_submitted ? (
+                        <DecisionBadge value={summary?.lore_approved ? "approved" : "pending"} />
+                      ) : (
+                        "Nincs"
+                      )}
                     </div>
                   </div>
 
                   <div className="lmr-surface-soft rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Discord név</div>
-                    <div className="mt-2 text-lg font-semibold">{summary?.discord_name || selectedUser.discord_name || "—"}</div>
+                    <div className="mt-2 text-lg font-semibold">
+                      {summary?.discord_name || selectedUser.discord_name || "—"}
+                    </div>
                   </div>
 
                   <div className="lmr-surface-soft rounded-[24px] p-4">
@@ -1766,7 +1813,9 @@ export default function VezetosegPage() {
 
                   <div className="lmr-surface-soft rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Pending esemény értékelések</div>
-                    <div className="mt-2 text-lg font-semibold">{summary?.pending_event_feedback_count ?? eventFeedbacks.length}</div>
+                    <div className="mt-2 text-lg font-semibold">
+                      {summary?.pending_event_feedback_count ?? eventFeedbacks.length}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1870,11 +1919,16 @@ export default function VezetosegPage() {
                                 Beküldve: {fmt(l.submitted_at)} • Hetek: {l.weeks}
                               </div>
                               <div className="mt-1 text-xs opacity-70">
-                                Állapot: 
+                                Állapot: <DecisionBadge value={l.is_approved ? "approved" : "pending"} />
                               </div>
                               <div className="mt-1 text-xs opacity-70">
                                 Imgur:{" "}
-                                <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(l.imgur_url)}>
+                                <a
+                                  className="underline"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  href={normalizeUrl(l.imgur_url)}
+                                >
                                   {l.imgur_url}
                                 </a>
                               </div>
@@ -1882,7 +1936,13 @@ export default function VezetosegPage() {
 
                             <div className="flex items-center gap-2">
                               <button
-                                onClick={() => approveLeadando(l.id, !l.is_approved, toDateInputValue(l.approved_until || selectedUser?.leadando_due_at || null))}
+                                onClick={() =>
+                                  approveLeadando(
+                                    l.id,
+                                    !l.is_approved,
+                                    toDateInputValue(l.approved_until || selectedUser?.leadando_due_at || null)
+                                  )
+                                }
                                 disabled={!token || busy === `leadando:${l.id}`}
                                 className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                               >
@@ -2067,7 +2127,8 @@ export default function VezetosegPage() {
                             <div className="flex flex-wrap items-start justify-between gap-4">
                               <div>
                                 <div className="font-medium">
-                                  Beküldve: {fmt(l.submitted_at)} • Állapot: <DecisionBadge value={l.is_approved ? "approved" : "pending"} />
+                                  Beküldve: {fmt(l.submitted_at)} • Állapot:{" "}
+                                  <DecisionBadge value={l.is_approved ? "approved" : "pending"} />
                                 </div>
                                 {l.discord_name ? (
                                   <div className="mt-1 text-xs opacity-70">Discord név: {l.discord_name}</div>
@@ -2089,8 +2150,8 @@ export default function VezetosegPage() {
                                   {busy === `lore:${l.id}:approve` || busy === `lore:${l.id}:revoke`
                                     ? "..."
                                     : l.is_approved
-                                    ? "Elfogadás visszavonása"
-                                    : "Elfogadás"}
+                                      ? "Elfogadás visszavonása"
+                                      : "Elfogadás"}
                                 </button>
 
                                 <button
@@ -2161,13 +2222,15 @@ export default function VezetosegPage() {
         </div>
       )}
 
-
       {tab === "leadandok" && (
         <div className="mt-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-lg font-semibold">Leadandók</div>
-              <div className="mt-1 text-sm opacity-70">Az összes aktív és vezetőségi tag egy helyen, rang prioritás szerint rendezve. Innen közvetlenül megnyitható a bizonyíték és elfogadható a leadandó.</div>
+              <div className="mt-1 text-sm opacity-70">
+                Az összes aktív és vezetőségi tag egy helyen, rang prioritás szerint rendezve.
+                Innen közvetlenül megnyitható a bizonyíték és elfogadható a leadandó.
+              </div>
             </div>
             <button
               onClick={loadLeadandoDashboard}
@@ -2206,16 +2269,20 @@ export default function VezetosegPage() {
                     const deadlineDraft = leadandoDeadlineDrafts[row.user_id] ?? "";
                     const statusLabel = submission
                       ? submission.is_approved
-                        ? "Elfogadva"
-                        : "Függőben"
-                      : "Nincs leadandó";
+                        ? "approved"
+                        : "pending"
+                      : "pending";
 
                     return (
                       <tr key={row.user_id} className="border-t border-white/10">
                         <td className="px-3 py-2 font-medium">{row.ic_name || "—"}</td>
-                        <td className="px-3 py-2">{row.rank_name || "—"}</td>
+                        <td className="px-3 py-2">
+                          {row.rank_name ? <RankBadge name={row.rank_name} /> : "—"}
+                        </td>
                         <td className="px-3 py-2">{submission ? fmt(submission.submitted_at) : "—"}</td>
-                        <td className="px-3 py-2"><DecisionBadge value={statusLabel} /></td>
+                        <td className="px-3 py-2">
+                          {submission ? <DecisionBadge value={statusLabel} /> : "Nincs leadandó"}
+                        </td>
                         <td className="px-3 py-2">
                           {submission?.imgur_url ? (
                             <a className="underline underline-offset-4" target="_blank" rel="noreferrer" href={normalizeUrl(submission.imgur_url)}>
@@ -2257,7 +2324,13 @@ export default function VezetosegPage() {
                                 [row.user_id]: !prev[row.user_id],
                               }));
                             }}
-                            disabled={!token || !submission || (submission.is_approved && leadandoDeadlineEditing[row.user_id] && (!deadlineDraft || busy === `leadando:deadline:${submission.id}`))}
+                            disabled={
+                              !token ||
+                              !submission ||
+                              (submission.is_approved &&
+                                leadandoDeadlineEditing[row.user_id] &&
+                                (!deadlineDraft || busy === `leadando:deadline:${submission.id}`))
+                            }
                             className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold hover:bg-white/15 disabled:opacity-50"
                           >
                             {submission?.is_approved
@@ -2273,7 +2346,9 @@ export default function VezetosegPage() {
                         </td>
                         <td className="px-3 py-2">
                           <button
-                            onClick={() => submission && approveLeadando(submission.id, !submission.is_approved, deadlineDraft || null)}
+                            onClick={() =>
+                              submission && approveLeadando(submission.id, !submission.is_approved, deadlineDraft || null)
+                            }
                             disabled={!token || !submission || busy === `leadando:${submission?.id}` || (!submission?.is_approved && !deadlineDraft)}
                             className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                           >
@@ -2295,7 +2370,10 @@ export default function VezetosegPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-lg font-semibold">Beérkezett ügyek</div>
-              <div className="mt-1 text-sm opacity-70">A még kezelést igénylő ticketek, leadandók, szereltetés igénylések és karaktertörténetek, beérkezési sorrendben.</div>
+              <div className="mt-1 text-sm opacity-70">
+                A még kezelést igénylő ticketek, leadandók, szereltetés igénylések és karaktertörténetek,
+                beérkezési sorrendben.
+              </div>
             </div>
             <button
               onClick={loadUnifiedInbox}
@@ -2308,7 +2386,9 @@ export default function VezetosegPage() {
 
           <div className="mt-4 space-y-2">
             {unifiedInbox.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm opacity-70">Még nincs beérkezett ügy.</div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm opacity-70">
+                Még nincs beérkezett ügy.
+              </div>
             ) : (
               unifiedInbox.map((row) => (
                 <div
@@ -2320,32 +2400,81 @@ export default function VezetosegPage() {
                     <div>
                       <div className="font-medium">{row.profile?.ic_name || "—"}</div>
                       <div className="mt-1 text-xs opacity-70">
-                        Típus: {row.inbox_type === "leadando" ? "Leadandó" : row.inbox_type === "ticket" ? "Ticket" : row.inbox_type === "service" ? "Szereltetés igénylés" : "Karaktertörténet"}
+                        Típus:{" "}
+                        {row.inbox_type === "leadando"
+                          ? "Leadandó"
+                          : row.inbox_type === "ticket"
+                            ? "Ticket"
+                            : row.inbox_type === "service"
+                              ? "Szereltetés igénylés"
+                              : "Karaktertörténet"}
                       </div>
                       <div className="mt-1 text-xs opacity-70">
-                        Beérkezett: {fmt(row.submitted_at)}{row.status_label ? " • Állapot: " : ""}{row.status_label ? <DecisionBadge value={row.status_label} className="align-middle" /> : null}
+                        Beérkezett: {fmt(row.submitted_at)}
+                        {row.status_label ? " • Állapot: " : ""}
+                        {row.status_label ? (
+                          <span className="align-middle">
+                            <DecisionBadge value={row.status_label} />
+                          </span>
+                        ) : null}
                       </div>
+                      <div className="mt-1 text-xs opacity-70">
+                        Státusz: {prettyStatus(row.profile?.status)}
+                      </div>
+                      {row.profile?.rank_id ? (
+                        <div className="mt-2">
+                          <RankBadge name={getRankName(row.profile.rank_id)} />
+                        </div>
+                      ) : null}
                       {row.title ? <div className="mt-1 text-xs opacity-70">Cím: {row.title}</div> : null}
                       {row.subtitle ? <div className="mt-1 text-xs opacity-70">Részlet: {row.subtitle}</div> : null}
                       <div className="mt-1 text-xs opacity-70">Discord: {row.profile?.discord_name || "—"}</div>
-                      <div className="mt-1 text-xs opacity-70">Státusz: {prettyStatus(row.profile?.status)}</div>
+
                       {row.leadando?.imgur_url ? (
                         <div className="mt-2 text-xs opacity-80">
-                          Imgur: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.leadando.imgur_url)} onClick={(e) => e.stopPropagation()}>{row.leadando.imgur_url}</a>
+                          Imgur:{" "}
+                          <a
+                            className="underline"
+                            target="_blank"
+                            rel="noreferrer"
+                            href={normalizeUrl(row.leadando.imgur_url)}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {row.leadando.imgur_url}
+                          </a>
                         </div>
                       ) : null}
+
                       {row.service?.imgur_url ? (
                         <div className="mt-2 text-xs opacity-80">
-                          Imgur: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.service.imgur_url)} onClick={(e) => e.stopPropagation()}>{row.service.imgur_url}</a>
+                          Imgur:{" "}
+                          <a
+                            className="underline"
+                            target="_blank"
+                            rel="noreferrer"
+                            href={normalizeUrl(row.service.imgur_url)}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {row.service.imgur_url}
+                          </a>
                         </div>
                       ) : null}
+
                       {row.lore?.lore_url ? (
                         <div className="mt-2 text-xs opacity-80">
-                          Link: <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(row.lore.lore_url)} onClick={(e) => e.stopPropagation()}>{row.lore.lore_url}</a>
+                          Link:{" "}
+                          <a
+                            className="underline"
+                            target="_blank"
+                            rel="noreferrer"
+                            href={normalizeUrl(row.lore.lore_url)}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {row.lore.lore_url}
+                          </a>
                         </div>
                       ) : null}
                     </div>
-
                   </div>
                 </div>
               ))
@@ -2359,7 +2488,9 @@ export default function VezetosegPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-lg font-semibold">TGF</div>
-              <div className="mt-1 text-sm opacity-70">Csak a pending státuszú felhasználók jelennek meg itt. A mentett információk az adatlapjukon később is megmaradnak.</div>
+              <div className="mt-1 text-sm opacity-70">
+                Csak a pending státuszú felhasználók jelennek meg itt. A mentett információk az adatlapjukon később is megmaradnak.
+              </div>
             </div>
             <button
               onClick={loadTgfRows}
@@ -2372,7 +2503,9 @@ export default function VezetosegPage() {
 
           <div className="mt-4 space-y-3">
             {tgfRows.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm opacity-70">Jelenleg nincs pending státuszú felhasználó.</div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm opacity-70">
+                Jelenleg nincs pending státuszú felhasználó.
+              </div>
             ) : (
               tgfRows.map((row) => (
                 <details key={row.profile.user_id} className="lmr-surface-soft rounded-[24px] p-4">
@@ -2393,7 +2526,12 @@ export default function VezetosegPage() {
                         <label className="block text-sm font-medium">Vezetőségi információk</label>
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => setTgfEditingRows((prev) => ({ ...prev, [row.profile.user_id]: !prev[row.profile.user_id] }))}
+                            onClick={() =>
+                              setTgfEditingRows((prev) => ({
+                                ...prev,
+                                [row.profile.user_id]: !prev[row.profile.user_id],
+                              }))
+                            }
                             className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10"
                           >
                             {tgfEditingRows[row.profile.user_id] ? "Mégse" : "Szerkesztés"}
@@ -2416,12 +2554,18 @@ export default function VezetosegPage() {
                         placeholder="Ide írhatók a pending / TGF felhasználóval kapcsolatos információk..."
                         disabled={!tgfEditingRows[row.profile.user_id]}
                       />
-                      <div className="mt-2 text-xs opacity-70">Utolsó frissítés: {fmt(row.tgf_note?.updated_at || row.tgf_note?.created_at || null)}</div>
+                      <div className="mt-2 text-xs opacity-70">
+                        Utolsó frissítés: {fmt(row.tgf_note?.updated_at || row.tgf_note?.created_at || null)}
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-2 md:w-48">
                       <button
-                        onClick={() => { openUser(row.profile); setTab("users"); setUserPanelTab("tgf"); }}
+                        onClick={() => {
+                          openUser(row.profile);
+                          setTab("users");
+                          setUserPanelTab("tgf");
+                        }}
                         className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
                       >
                         Adatlap megnyitása

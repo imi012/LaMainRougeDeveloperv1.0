@@ -66,69 +66,107 @@ function formatDateTime(iso: string) {
   return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
 }
 
-/**
- * Támogatott minták:
- * - [SeeMTA - Siker]: A kazettában 136 404 $ volt.
- * - [SeeMTA - Siker]: Sikeresen eladtál 5 darab tárgyat 136 404 $
- *
- * A fő összegzésben a kazettás és az eladós sorok összeadódnak.
- * Mindkettőnél nettó = bruttó * 0.9.
- */
+function extractMoneyFromLine(line: string) {
+  const normalized = line.replace(/\./g, "");
+  const match =
+    normalized.match(/([\d\s]+)\s*\$/) ||
+    normalized.match(/([\d\s]+)\s*dollárért/i) ||
+    normalized.match(/([\d\s]+)\s*dollár/i);
+
+  if (!match) return null;
+
+  const value = Number((match[1] || "").replace(/\s+/g, ""));
+  return Number.isFinite(value) ? value : null;
+}
+
+function extractAntiqueItemCount(line: string) {
+  const normalized = line.replace(/\./g, "");
+  const match = normalized.match(/eladtál\s+(\d+)\s+darab\s+tárgyat/i);
+  if (!match) return 0;
+
+  const count = Number(match[1]);
+  return Number.isFinite(count) ? count : 0;
+}
+
 function parseActionLog(raw: string) {
   const lines = raw.split(/\r?\n/);
 
   let cassetteCount = 0;
   let cassetteGross = 0;
-  let saleCount = 0;
-  let saleGross = 0;
-  const saleLines: string[] = [];
+
+  let antiqueCount = 0;
+  let antiqueGross = 0;
+
+  let goldBarCount = 0;
+  let goldBarGross = 0;
+
+  const antiqueLines: string[] = [];
+  const goldBarLines: string[] = [];
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    if (line.includes("A kazettában") && line.includes("$") && line.includes("volt")) {
-      const tail = line.slice(line.indexOf("A kazettában"));
-      const idxDollar = tail.indexOf("$");
-      if (idxDollar >= 0) {
-        const beforeDollar = tail.slice(0, idxDollar);
-        const match = beforeDollar.match(/([\d\s]+)\s*$/);
-        if (match) {
-          const value = Number((match[1] || "").replace(/\s+/g, ""));
-          if (Number.isFinite(value)) {
-            cassetteGross += value;
-            cassetteCount += 1;
-            continue;
-          }
-        }
+    if (
+      line.includes("A kazettában") &&
+      (line.includes("$") || /dollár/i.test(line)) &&
+      line.includes("volt")
+    ) {
+      const value = extractMoneyFromLine(line);
+      if (value !== null) {
+        cassetteGross += value;
+        cassetteCount += 1;
+        continue;
       }
     }
 
-    if (line.includes("Sikeresen eladtál") && line.includes("darab tárgyat") && line.includes("$")) {
-      const match = line.match(/darab\s+tárgyat\s+([\d\s]+)\s*\$/i);
-      if (match) {
-        const value = Number((match[1] || "").replace(/\s+/g, ""));
-        if (Number.isFinite(value)) {
-          saleGross += value;
-          saleCount += 1;
-          saleLines.push(line);
-        }
+    if (
+      line.includes("Sikeresen eladtál") &&
+      line.toLowerCase().includes("egy aranyrudat") &&
+      (/dollárért/i.test(line) || line.includes("$"))
+    ) {
+      const value = extractMoneyFromLine(line);
+      if (value !== null) {
+        goldBarGross += value;
+        goldBarCount += 1;
+        goldBarLines.push(line);
+        continue;
+      }
+    }
+
+    if (
+      line.includes("Sikeresen eladtál") &&
+      line.includes("darab tárgyat") &&
+      (/dollárért/i.test(line) || line.includes("$"))
+    ) {
+      const value = extractMoneyFromLine(line);
+      const itemCount = extractAntiqueItemCount(line);
+
+      if (value !== null) {
+        antiqueGross += value;
+        antiqueCount += itemCount;
+        antiqueLines.push(line);
+        continue;
       }
     }
   }
 
-  const gross = cassetteGross + saleGross;
+  const gross = cassetteGross + antiqueGross + goldBarGross;
   const net = Math.round(gross * 0.9);
 
   return {
     cassetteCount,
     cassetteGross,
-    saleCount,
-    saleGross,
-    saleNet: Math.round(saleGross * 0.9),
+    antiqueCount,
+    antiqueGross,
+    antiqueNet: Math.round(antiqueGross * 0.9),
+    goldBarCount,
+    goldBarGross,
+    goldBarNet: Math.round(goldBarGross * 0.9),
     gross,
     net,
-    saleLines,
+    antiqueLines,
+    goldBarLines,
   };
 }
 
@@ -153,6 +191,7 @@ export default function AkciokPage() {
   const [newOrganizer, setNewOrganizer] = useState<string>("");
 
   const [logText, setLogText] = useState<Record<string, string>>({});
+  const [selectedLogFileName, setSelectedLogFileName] = useState<Record<string, string>>({});
 
   const memberName = useMemo(() => {
     const map = new Map<string, string>();
@@ -171,11 +210,6 @@ export default function AkciokPage() {
     filtered.sort((a, b) => (a.ic_name || "").localeCompare(b.ic_name || ""));
     return filtered;
   }, [members]);
-
-  const isLeadership = useMemo(() => {
-    if (!me) return false;
-    return me.site_role === "admin" || me.site_role === "owner" || me.status === "leadership";
-  }, [me]);
 
   const hasActionManagerAccess = useMemo(() => {
     return hasActionManagerPermission(me, myRankName);
@@ -318,9 +352,11 @@ export default function AkciokPage() {
   function participantsFor(actionId: string) {
     return participants.filter((p) => p.action_id === actionId);
   }
+
   function logsFor(actionId: string) {
     return logs.filter((l) => l.action_id === actionId);
   }
+
   function imagesFor(actionId: string) {
     return images.filter((i) => i.action_id === actionId);
   }
@@ -330,18 +366,35 @@ export default function AkciokPage() {
     const f = ps.filter((p) => p.attended).length;
     const actionLogs = logsFor(actionId);
 
-    const gross = actionLogs.reduce((acc, l) => acc + (Number(l.gross_amount) || 0), 0);
-    const net = actionLogs.reduce((acc, l) => acc + (Number(l.net_amount) || 0), 0);
-    const cassetteCount = actionLogs.reduce((acc, l) => acc + (Number(l.cassette_count) || 0), 0);
-    const saleCount = actionLogs.reduce((acc, l) => acc + parseActionLog(l.raw_text).saleCount, 0);
-    const saleGross = actionLogs.reduce((acc, l) => acc + parseActionLog(l.raw_text).saleGross, 0);
-    const saleNet = Math.round(saleGross * 0.9);
+    const parsedLogs = actionLogs.map((l) => parseActionLog(l.raw_text));
+
+    const gross = parsedLogs.reduce((acc, l) => acc + l.gross, 0);
+    const net = parsedLogs.reduce((acc, l) => acc + l.net, 0);
+    const cassetteCount = parsedLogs.reduce((acc, l) => acc + l.cassetteCount, 0);
+    const antiqueCount = parsedLogs.reduce((acc, l) => acc + l.antiqueCount, 0);
+    const antiqueGross = parsedLogs.reduce((acc, l) => acc + l.antiqueGross, 0);
+    const antiqueNet = Math.round(antiqueGross * 0.9);
+    const goldBarCount = parsedLogs.reduce((acc, l) => acc + l.goldBarCount, 0);
+    const goldBarGross = parsedLogs.reduce((acc, l) => acc + l.goldBarGross, 0);
+    const goldBarNet = Math.round(goldBarGross * 0.9);
 
     const perHead = f > 0 ? Math.floor(net / f) : null;
-    return { f, gross, net, perHead, cassetteCount, saleCount, saleGross, saleNet };
+
+    return {
+      f,
+      gross,
+      net,
+      perHead,
+      cassetteCount,
+      antiqueCount,
+      antiqueGross,
+      antiqueNet,
+      goldBarCount,
+      goldBarGross,
+      goldBarNet,
+    };
   }
 
-  // Auto roster sync when open
   useEffect(() => {
     (async () => {
       if (!expandedId) return;
@@ -404,9 +457,9 @@ export default function AkciokPage() {
         body: JSON.stringify({ name: newName.trim(), organizer_id: newOrganizer || null }),
       });
       data = (json?.row as ActionRow) ?? null;
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült létrehozni az akciót.");
+      return setError(err?.message || "Nem sikerült létrehozni az akciót.");
     }
 
     if (!data) {
@@ -460,9 +513,9 @@ export default function AkciokPage() {
         method: "POST",
         body: JSON.stringify({ action_id: actionId, user_id: userId, attended }),
       });
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült menteni.");
+      return setError(err?.message || "Nem sikerült menteni.");
     }
 
     setParticipants((prev) =>
@@ -489,9 +542,9 @@ export default function AkciokPage() {
         method: "POST",
         body: JSON.stringify({ action_id: actionId, user_id: userId, paid }),
       });
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült menteni.");
+      return setError(err?.message || "Nem sikerült menteni.");
     }
 
     setParticipants((prev) =>
@@ -515,9 +568,9 @@ export default function AkciokPage() {
       });
       const data = json?.row as ActionRow;
       setActions((prev) => prev.map((x) => (x.id === actionId ? data : x)));
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült frissíteni.");
+      return setError(err?.message || "Nem sikerült frissíteni.");
     }
     setBusy(null);
   }
@@ -535,9 +588,9 @@ export default function AkciokPage() {
       });
       const data = json?.row as ActionRow;
       setActions((prev) => prev.map((x) => (x.id === actionId ? data : x)));
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült menteni a lezárást.");
+      return setError(err?.message || "Nem sikerült menteni a lezárást.");
     }
     setBusy(null);
   }
@@ -560,11 +613,13 @@ export default function AkciokPage() {
       });
       const data = json?.row as ActionLogRow;
       setLogs((prev) => [data, ...prev]);
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült feltölteni a logot.");
+      return setError(err?.message || "Nem sikerült feltölteni a logot.");
     }
+
     setLogText((prev) => ({ ...prev, [actionId]: "" }));
+    setSelectedLogFileName((prev) => ({ ...prev, [actionId]: "" }));
     setBusy(null);
   }
 
@@ -579,9 +634,9 @@ export default function AkciokPage() {
         method: "POST",
         body: JSON.stringify({ log_id: logId }),
       });
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült törölni a logot.");
+      return setError(err?.message || "Nem sikerült törölni a logot.");
     }
 
     setLogs((prev) => prev.filter((l) => l.id !== logId));
@@ -591,6 +646,7 @@ export default function AkciokPage() {
   async function loadLogFile(actionId: string, file: File) {
     const text = await file.text();
     setLogText((prev) => ({ ...prev, [actionId]: text }));
+    setSelectedLogFileName((prev) => ({ ...prev, [actionId]: file.name }));
   }
 
   async function addImgur(actionId: string) {
@@ -602,7 +658,9 @@ export default function AkciokPage() {
     setError(null);
     const url = prompt("Adj meg egy Imgur linket (imgur.com vagy i.imgur.com):")?.trim();
     if (!url) return;
-    if (!/^(https?:\/\/)?(i\.)?imgur\.com\//i.test(url)) return setError("Csak Imgur link engedélyezett.");
+    if (!/^(https?:\/\/)?(i\.)?imgur\.com\//i.test(url)) {
+      return setError("Csak Imgur link engedélyezett.");
+    }
 
     setBusy(`img:${actionId}`);
 
@@ -613,9 +671,9 @@ export default function AkciokPage() {
       });
       const data = json?.row as ActionImageRow;
       setImages((prev) => [data, ...prev]);
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült hozzáadni a képet.");
+      return setError(err?.message || "Nem sikerült hozzáadni a képet.");
     }
     setBusy(null);
   }
@@ -631,9 +689,9 @@ export default function AkciokPage() {
         method: "POST",
         body: JSON.stringify({ image_id: imageId }),
       });
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült törölni a képlinket.");
+      return setError(err?.message || "Nem sikerült törölni a képlinket.");
     }
 
     setImages((prev) => prev.filter((i) => i.id !== imageId));
@@ -652,9 +710,9 @@ export default function AkciokPage() {
         method: "POST",
         body: JSON.stringify({ action_id: actionId }),
       });
-    } catch (error: any) {
+    } catch (err: any) {
       setBusy(null);
-      return setError(error?.message || "Nem sikerült törölni az akciót.");
+      return setError(err?.message || "Nem sikerült törölni az akciót.");
     }
 
     setActions((prev) => prev.filter((a) => a.id !== actionId));
@@ -666,21 +724,32 @@ export default function AkciokPage() {
     setBusy(null);
   }
 
-  if (loading) return <div className="p-6">Betöltés…</div>;
+  if (loading) {
+    return (
+      <div className="lmr-page lmr-page-wide">
+        <div className="px-1 py-6 text-sm text-white/70">Betöltés…</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
-      <section className="lmr-surface-soft rounded-[28px] p-6 md:p-7">
+    <div className="lmr-page lmr-page-wide">
+      <section className="lmr-hero">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">La Main Rouge</div>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Akciók</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/70">
-              Akciók szervezése, résztvevők követése, logok és képek feltöltése egységesített felületen.
-              Aktív tagok: {activeMembers.length} fő
-              {me ? <span className="ml-2 text-white/50">(Te: status={me.status}, role={me.site_role})</span> : null}
+          <div className="max-w-4xl">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">
+              La Main Rouge
+            </div>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white md:text-4xl">
+              Akciók
+            </h1>
+            <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/70">
+              Akciók szervezése, logok és képek feltöltése egységesített felületen. Aktív tagok:{" "}
+              {activeMembers.length} fő
             </p>
           </div>
+
           <button
             onClick={loadAll}
             className="rounded-2xl border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-white hover:bg-white/[0.09]"
@@ -692,13 +761,17 @@ export default function AkciokPage() {
       </section>
 
       {error && (
-        <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>
+        <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {error}
+        </div>
       )}
 
       {canCreateActions ? (
-        <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6 space-y-4">
-          <h2 className="font-semibold">Új akció</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <section className="mt-10">
+          <h2 className="text-2xl font-semibold text-white">Új akció</h2>
+          <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+
+          <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
@@ -725,339 +798,442 @@ export default function AkciokPage() {
               {busy === "create" ? "Létrehozás…" : "Létrehozás"}
             </button>
           </div>
-          <div className="text-xs text-white/60">
-            Az akció létrehozásakor az aktív tagok automatikusan beimportálódnak a résztvevőlistába.
-          </div>
-        </div>
+        </section>
       ) : (
-        <div className="lmr-empty-state rounded-[26px] px-5 py-5 text-sm">
-          Új akciót csak a vezetőség hozhat létre. Te meglévő, nem lezárt akciókhoz tölthetsz fel logot és Imgur linket.
+        <div className="mt-8 text-sm text-white/65">
+          Új akciót csak a vezetőség hozhat létre. Te meglévő, nem lezárt akciókhoz tölthetsz fel
+          logot és Imgur linket.
         </div>
       )}
 
-      <div className="space-y-3">
-        {actions.length === 0 ? (
-          <div className="text-white/70">Még nincs akció.</div>
-        ) : (
-          actions.map((a) => {
-            const isOpen = expandedId === a.id;
-            const organizerName = a.organizer_id ? memberName.get(a.organizer_id) : "—";
+      <section className="mt-12">
+        <h2 className="text-2xl font-semibold text-white">Akciólista</h2>
+        <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
 
-            const { f, gross, net, perHead, cassetteCount, saleCount, saleGross, saleNet } = totalsFor(a.id);
+        <div className="mt-6 space-y-5">
+          {actions.length === 0 ? (
+            <div className="text-white/70">Még nincs akció.</div>
+          ) : (
+            actions.map((a) => {
+              const isOpen = expandedId === a.id;
+              const organizerName = a.organizer_id ? memberName.get(a.organizer_id) : "—";
 
-            const ps = participantsFor(a.id);
-            const ls = logsFor(a.id);
-            const ims = imagesFor(a.id);
+              const {
+                f,
+                gross,
+                net,
+                perHead,
+                cassetteCount,
+                antiqueCount,
+                antiqueNet,
+                goldBarCount,
+                goldBarNet,
+              } = totalsFor(a.id);
 
-            const preview = parseActionLog(logText[a.id] ?? "");
-            const isLocked = a.is_closed;
+              const ps = participantsFor(a.id);
+              const ls = logsFor(a.id);
+              const ims = imagesFor(a.id);
 
-            return (
-              <div key={a.id} className="lmr-surface-soft overflow-hidden rounded-[26px]">
-                <button
-                  onClick={() => setExpandedId(isOpen ? null : a.id)}
-                  className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left hover:bg-white/[0.04]"
-                >
-                  <div className="min-w-0">
-                    <div className="font-semibold truncate">
-                      {a.name}{" "}
-                      {isLocked ? <span className="text-xs text-red-300 ml-2">(LEZÁRVA)</span> : null}
-                    </div>
-                    <div className="text-xs text-white/60 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                      <span>Szervező: {organizerName || "—"}</span>
-                      <span>Résztvevő: {f} fő</span>
-                      <span>Kazetta: {cassetteCount} db</span>
-                      <span>Eladás log: {saleCount} db</span>
-                      <span>Bruttó: {gross.toLocaleString()}$</span>
-                      <span>Nettó: {net.toLocaleString()}$</span>
-                      {saleCount > 0 ? <span>Eladás nettó: {saleNet.toLocaleString()}$</span> : null}
-                      <span>/fő: {perHead === null ? "—" : `${perHead.toLocaleString()}$`}</span>
-                      <span>Autók: {a.cars_checked ? "✅" : "❌"}</span>
-                    </div>
-                  </div>
-                  <div className="text-sm text-white/70">{isOpen ? "▲" : "▼"}</div>
-                </button>
+              const preview = parseActionLog(logText[a.id] ?? "");
+              const isLocked = a.is_closed;
 
-                {isOpen && (
-                  <div className="space-y-6 px-5 pb-5 pt-1 md:px-6 md:pb-6">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="font-semibold">
-                        Résztvevők ({ps.length} sor){busy === `sync:${a.id}` ? " — szinkron…" : ""}
-                      </h3>
+              return (
+                <div key={a.id} className="border-b border-white/10 pb-5">
+                  <button
+                    onClick={() => setExpandedId(isOpen ? null : a.id)}
+                    className="flex w-full items-center justify-between gap-3 text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-white">
+                        {a.name}
+                        {isLocked ? (
+                          <span className="ml-2 text-xs text-red-300">(LEZÁRVA)</span>
+                        ) : null}
+                      </div>
 
-                      <div className="flex items-center gap-3 flex-wrap justify-end">
-                        <label className="inline-flex items-center gap-2 text-sm text-white/80">
-                          <span>Autók rendben</span>
-                          <input
-                            type="checkbox"
-                            checked={a.cars_checked}
-                            disabled={!canManageCarsChecked || busy === `cars:${a.id}` || isLocked}
-                            onChange={(e) => setCarsChecked(a.id, e.target.checked)}
-                          />
-                        </label>
-
-                        {canCloseActions && (
-                          <button
-                            onClick={() => setClosed(a.id, !a.is_closed)}
-                            disabled={busy === `close:${a.id}`}
-                            className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-60"
-                          >
-                            {busy === `close:${a.id}`
-                              ? "Mentés…"
-                              : a.is_closed
-                              ? "Feloldás"
-                              : "Lezárás"}
-                          </button>
-                        )}
-
-                        {canDeleteActions && (
-                          <button
-                            onClick={() => deleteAction(a.id)}
-                            disabled={busy === `del:${a.id}`}
-                            className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
-                          >
-                            {busy === `del:${a.id}` ? "Törlés…" : "Akció törlése"}
-                          </button>
-                        )}
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/60">
+                        <span>Szervező: {organizerName || "—"}</span>
+                        <span>Résztvevő: {f} fő</span>
+                        <span>Kazetta: {cassetteCount} db</span>
+                        <span>Aranyrúd: {goldBarCount} db</span>
+                        <span>Antik: {antiqueCount} db</span>
+                        <span>Bruttó: {gross.toLocaleString()}$</span>
+                        <span>Nettó: {net.toLocaleString()}$</span>
+                        {goldBarCount > 0 ? <span>Aranyrúd nettó: {goldBarNet.toLocaleString()}$</span> : null}
+                        {antiqueCount > 0 ? <span>Antik nettó: {antiqueNet.toLocaleString()}$</span> : null}
+                        <span>/fő: {perHead === null ? "—" : `${perHead.toLocaleString()}$`}</span>
+                        <span>Autók: {a.cars_checked ? "✅" : "❌"}</span>
                       </div>
                     </div>
 
-                    {isLocked && (
-                      <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/70">
-                        Az akció le van zárva: résztvevő pipálás / log / képek módosítása letiltva.
-                      </div>
-                    )}
+                    <div className="text-sm text-white/70">{isOpen ? "▲" : "▼"}</div>
+                  </button>
 
-                    {ps.length === 0 ? (
-                      <div className="text-white/70">
-                        Még nincs névsor (ha pár mp múlva sem jelenik meg, akkor a participant upsert RLS tiltja).
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto rounded-[24px] border border-white/10">
-                        <table className="w-full text-sm">
-                          <thead className="bg-white/5 text-white/70">
-                            <tr>
-                              <th className="text-left p-2">Név</th>
-                              <th className="text-left p-2">Részt vett</th>
-                              <th className="text-left p-2">Pénzt átvette</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {ps
-                              .slice()
-                              .sort((x, y) =>
-                                (memberName.get(x.user_id) || "").localeCompare(memberName.get(y.user_id) || "")
-                              )
-                              .map((p) => {
-                                const n = memberName.get(p.user_id) || "(nincs név)";
-                                const attendingBusy = busy === `att:${a.id}:${p.user_id}`;
-                                const paidBusy = busy === `paid:${a.id}:${p.user_id}`;
+                  <div className="mt-4 h-[2px] w-10 rounded-full bg-red-600/70" />
 
-                                return (
-                                  <tr key={p.user_id} className="border-t border-white/10">
-                                    <td className="p-2">{n}</td>
-                                    <td className="p-2">
-                                      <label className="inline-flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={p.attended}
-                                          disabled={!canManageParticipants || attendingBusy || isLocked}
-                                          onChange={(e) => setAttended(a.id, p.user_id, e.target.checked)}
-                                        />
-                                        <span className="text-white/80">{p.attended ? "Igen" : "Nem"}</span>
-                                      </label>
-                                    </td>
-                                    <td className="p-2">
-                                      <label className="inline-flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={p.paid}
-                                          disabled={!canManageParticipants || !p.attended || paidBusy || isLocked}
-                                          onChange={(e) => setPaid(a.id, p.user_id, e.target.checked)}
-                                        />
-                                        <span className={p.attended ? "text-white/80" : "text-white/40"}>
-                                          {p.paid ? "Igen" : "Nem"}
-                                        </span>
-                                      </label>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold">Logok</h3>
-                        <div className="text-xs text-white/60">{ls.length} db</div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="space-y-2">
-                          <textarea
-                            value={logText[a.id] ?? ""}
-                            onChange={(e) => setLogText((prev) => ({ ...prev, [a.id]: e.target.value }))}
-                            placeholder="Illeszd be a .log tartalmat…"
-                            className="w-full h-40 px-3 py-2 rounded bg-black/30 border border-white/10"
-                            disabled={isLocked}
-                          />
-
-                          <div className="text-xs text-white/60 space-y-1">
-                            <div>
-                              Előnézet: talált kazetta <span className="text-white/80">{preview.cassetteCount}</span>, eladás log{" "}
-                              <span className="text-white/80">{preview.saleCount}</span>, bruttó <span className="text-white/80">{preview.gross.toLocaleString()}$</span>, nettó{" "}
-                              <span className="text-white/80">{preview.net.toLocaleString()}$</span>
-                            </div>
-                            {preview.saleCount > 0 ? (
-                              <div>
-                                Eladásból számolt nettó: <span className="text-white/80">{preview.saleNet.toLocaleString()}$</span>
-                              </div>
-                            ) : null}
+                  {isOpen && (
+                    <div className="space-y-10 pt-6">
+                      <section>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <h3 className="text-xl font-semibold text-white">
+                              Résztvevők ({ps.length} sor)
+                              {busy === `sync:${a.id}` ? " — szinkron…" : ""}
+                            </h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/70" />
                           </div>
 
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <input
-                              type="file"
-                              accept=".log"
-                              className="text-sm"
-                              disabled={isLocked}
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) void loadLogFile(a.id, f);
-                              }}
-                            />
-                            <button
-                              onClick={() => uploadLog(a.id)}
-                              disabled={busy === `log:${a.id}` || isLocked}
-                              className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
-                            >
-                              {busy === `log:${a.id}` ? "Feltöltés…" : "Log feltöltés"}
-                            </button>
-                          </div>
-                        </div>
+                          <div className="flex flex-wrap items-center justify-end gap-3">
+                            <label className="inline-flex items-center gap-2 text-sm text-white/80">
+                              <span>Autók rendben</span>
+                              <input
+                                type="checkbox"
+                                checked={a.cars_checked}
+                                disabled={!canManageCarsChecked || busy === `cars:${a.id}` || isLocked}
+                                onChange={(e) => setCarsChecked(a.id, e.target.checked)}
+                              />
+                            </label>
 
-                        <div className="space-y-2">
-                          <div className="text-sm text-white/80">Log lista</div>
-                          <div className="rounded border border-white/10 max-h-64 overflow-auto">
-                            {ls.length === 0 ? (
-                              <div className="p-3 text-white/70">Még nincs log feltöltve.</div>
-                            ) : (
-                              <table className="w-full text-sm">
-                                <thead className="bg-white/5 text-white/70">
-                                  <tr>
-                                    <th className="text-left p-2">Idő</th>
-                                    <th className="text-left p-2">Kazetta</th>
-                                    <th className="text-left p-2">Eladás log</th>
-                                    <th className="text-left p-2">Bruttó</th>
-                                    <th className="text-left p-2">Nettó</th>
-                                    <th className="text-left p-2">Feltöltő</th>
-                                    <th className="text-right p-2">Törlés</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {ls.map((l) => {
-                                    const parsedLog = parseActionLog(l.raw_text);
+                            {canCloseActions && (
+                              <button
+                                onClick={() => setClosed(a.id, !a.is_closed)}
+                                disabled={busy === `close:${a.id}`}
+                                className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-60"
+                              >
+                                {busy === `close:${a.id}`
+                                  ? "Mentés…"
+                                  : a.is_closed
+                                  ? "Feloldás"
+                                  : "Lezárás"}
+                              </button>
+                            )}
 
-                                    return (
-                                      <Fragment key={l.id}>
-                                        <tr className="border-t border-white/10 align-top">
-                                          <td className="p-2 text-white/70">{formatDateTime(l.created_at)}</td>
-                                          <td className="p-2">{l.cassette_count ?? "—"}</td>
-                                          <td className="p-2">{parsedLog.saleCount || "—"}</td>
-                                          <td className="p-2">{(Number(l.gross_amount) || 0).toLocaleString()}$</td>
-                                          <td className="p-2">{(Number(l.net_amount) || 0).toLocaleString()}$</td>
-                                          <td className="p-2 text-white/70">
-                                            {l.uploaded_by ? memberName.get(l.uploaded_by) || "—" : "—"}
-                                          </td>
-                                          <td className="p-2 text-right">
-                                            <button
-                                              onClick={() => deleteLog(l.id)}
-                                              disabled={busy === `dlog:${l.id}` || isLocked}
-                                              className="px-2 py-1 rounded bg-white/10 hover:bg-white/15 disabled:opacity-60"
-                                            >
-                                              {busy === `dlog:${l.id}` ? "…" : "Törlés"}
-                                            </button>
-                                          </td>
-                                        </tr>
-                                        {parsedLog.saleLines.map((saleLine, idx) => (
-                                          <tr key={`${l.id}:sale:${idx}`} className="border-t border-white/10 bg-black/10">
-                                            <td className="p-2 text-xs text-white/45">Eladás log</td>
-                                            <td className="p-2 text-xs text-white/45" colSpan={5}>
-                                              {saleLine}
-                                            </td>
-                                            <td className="p-2" />
-                                          </tr>
-                                        ))}
-                                      </Fragment>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
+                            {canDeleteActions && (
+                              <button
+                                onClick={() => deleteAction(a.id)}
+                                disabled={busy === `del:${a.id}`}
+                                className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+                              >
+                                {busy === `del:${a.id}` ? "Törlés…" : "Akció törlése"}
+                              </button>
                             )}
                           </div>
                         </div>
-                      </div>
-                    </div>
 
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold">Bizonyító képek (Imgur)</h3>
-                        <button
-                          onClick={() => addImgur(a.id)}
-                          disabled={busy === `img:${a.id}` || isLocked}
-                          className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-60"
-                        >
-                          {busy === `img:${a.id}` ? "Mentés…" : "Imgur link hozzáadás"}
-                        </button>
-                      </div>
+                        {isLocked && (
+                          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/70">
+                            Az akció le van zárva: résztvevő pipálás / log / képek módosítása letiltva.
+                          </div>
+                        )}
 
-                      {ims.length === 0 ? (
-                        <div className="text-white/70">Még nincs kép.</div>
-                      ) : (
-                        <div className="space-y-2">
-                          {ims.map((im) => (
-                            <div
-                              key={im.id}
-                              className="p-3 rounded border border-white/10 bg-black/20 flex items-start justify-between gap-3"
-                            >
-                              <div className="min-w-0">
-                                <a
-                                  href={im.imgur_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-sm break-all hover:underline"
-                                >
-                                  {im.imgur_url}
-                                </a>
-                                <div className="text-xs text-white/60 mt-1">
-                                  {formatDateTime(im.created_at)} — feltöltötte:{" "}
+                        {ps.length === 0 ? (
+                          <div className="mt-4 text-white/70">
+                            Még nincs névsor (ha pár mp múlva sem jelenik meg, akkor a participant
+                            upsert RLS tiltja).
+                          </div>
+                        ) : (
+                          <div className="mt-5 overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="border-b border-white/10 text-white/70">
+                                <tr>
+                                  <th className="p-2 text-left">Név</th>
+                                  <th className="p-2 text-left">Részt vett</th>
+                                  <th className="p-2 text-left">Pénzt átvette</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ps
+                                  .slice()
+                                  .sort((x, y) =>
+                                    (memberName.get(x.user_id) || "").localeCompare(
+                                      memberName.get(y.user_id) || ""
+                                    )
+                                  )
+                                  .map((p) => {
+                                    const n = memberName.get(p.user_id) || "(nincs név)";
+                                    const attendingBusy = busy === `att:${a.id}:${p.user_id}`;
+                                    const paidBusy = busy === `paid:${a.id}:${p.user_id}`;
+
+                                    return (
+                                      <tr key={p.user_id} className="border-b border-white/8">
+                                        <td className="p-2 text-white">{n}</td>
+                                        <td className="p-2">
+                                          <label className="inline-flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              checked={p.attended}
+                                              disabled={!canManageParticipants || attendingBusy || isLocked}
+                                              onChange={(e) =>
+                                                setAttended(a.id, p.user_id, e.target.checked)
+                                              }
+                                            />
+                                            <span className="text-white/80">
+                                              {p.attended ? "Igen" : "Nem"}
+                                            </span>
+                                          </label>
+                                        </td>
+                                        <td className="p-2">
+                                          <label className="inline-flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              checked={p.paid}
+                                              disabled={!canManageParticipants || !p.attended || paidBusy || isLocked}
+                                              onChange={(e) =>
+                                                setPaid(a.id, p.user_id, e.target.checked)
+                                              }
+                                            />
+                                            <span className={p.attended ? "text-white/80" : "text-white/40"}>
+                                              {p.paid ? "Igen" : "Nem"}
+                                            </span>
+                                          </label>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </section>
+
+                      <section>
+                        <div>
+                          <h3 className="text-xl font-semibold text-white">Logok</h3>
+                          <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/70" />
+                          <div className="mt-2 text-xs text-white/60">{ls.length} db</div>
+                        </div>
+
+                        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(520px,1fr)_minmax(520px,1fr)]">
+                          <div className="min-w-[520px] space-y-3">
+                            <textarea
+                              value={logText[a.id] ?? ""}
+                              onChange={(e) =>
+                                setLogText((prev) => ({ ...prev, [a.id]: e.target.value }))
+                              }
+                              placeholder="Illeszd be a .log tartalmat…"
+                              className="h-40 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2"
+                              disabled={isLocked}
+                            />
+
+                            <div className="space-y-1 text-xs text-white/60">
+                              <div>
+                                Előnézet: kazetta{" "}
+                                <span className="text-white/80">{preview.cassetteCount}</span>,
+                                aranyrúd <span className="text-white/80">{preview.goldBarCount}</span>,
+                                antik <span className="text-white/80">{preview.antiqueCount}</span>,
+                                bruttó <span className="text-white/80">{preview.gross.toLocaleString()}$</span>,
+                                nettó <span className="text-white/80">{preview.net.toLocaleString()}$</span>
+                              </div>
+                              {preview.goldBarCount > 0 ? (
+                                <div>
+                                  Aranyrúd nettó:{" "}
                                   <span className="text-white/80">
-                                    {im.uploaded_by ? memberName.get(im.uploaded_by) || "—" : "—"}
+                                    {preview.goldBarNet.toLocaleString()}$
                                   </span>
                                 </div>
-                              </div>
+                              ) : null}
+                              {preview.antiqueCount > 0 ? (
+                                <div>
+                                  Antik nettó:{" "}
+                                  <span className="text-white/80">
+                                    {preview.antiqueNet.toLocaleString()}$
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                              <input
+                                id={`log-file-${a.id}`}
+                                type="file"
+                                accept=".log"
+                                className="hidden"
+                                disabled={isLocked}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) {
+                                    void loadLogFile(a.id, f);
+                                  } else {
+                                    setSelectedLogFileName((prev) => ({ ...prev, [a.id]: "" }));
+                                  }
+                                }}
+                              />
+
+                              <label
+                                htmlFor={`log-file-${a.id}`}
+                                className={`inline-flex cursor-pointer items-center rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm text-white transition hover:bg-white/[0.08] ${
+                                  isLocked ? "pointer-events-none opacity-60" : ""
+                                }`}
+                              >
+                                Tallózás
+                              </label>
+
+                              <span className="text-sm text-white/60">
+                                {selectedLogFileName[a.id] || "Nincs kijelölve fájl."}
+                              </span>
 
                               <button
-                                onClick={() => deleteImgur(im.id)}
-                                disabled={busy === `dimg:${im.id}` || isLocked}
-                                className="px-2 py-1 rounded bg-white/10 hover:bg-white/15 disabled:opacity-60 shrink-0"
+                                onClick={() => uploadLog(a.id)}
+                                disabled={busy === `log:${a.id}` || isLocked}
+                                className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
                               >
-                                {busy === `dimg:${im.id}` ? "…" : "Törlés"}
+                                {busy === `log:${a.id}` ? "Feltöltés…" : "Log feltöltés"}
                               </button>
                             </div>
-                          ))}
+                          </div>
+
+                          <div className="min-w-[520px] space-y-3">
+                            <div className="text-sm text-white/80">Log lista</div>
+                            <div className="max-h-64 overflow-auto border border-white/10">
+                              {ls.length === 0 ? (
+                                <div className="p-3 text-white/70">Még nincs log feltöltve.</div>
+                              ) : (
+                                <table className="w-full min-w-[700px] text-sm">
+                                  <thead className="border-b border-white/10 text-white/70">
+                                    <tr>
+                                      <th className="p-2 text-left">Idő</th>
+                                      <th className="p-2 text-left">Kazetta</th>
+                                      <th className="p-2 text-left">Aranyrúd</th>
+                                      <th className="p-2 text-left">Antik</th>
+                                      <th className="p-2 text-left">Bruttó</th>
+                                      <th className="p-2 text-left">Nettó</th>
+                                      <th className="p-2 text-left">Feltöltő</th>
+                                      <th className="p-2 text-right">Törlés</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {ls.map((l) => {
+                                      const parsedLog = parseActionLog(l.raw_text);
+
+                                      return (
+                                        <Fragment key={l.id}>
+                                          <tr className="border-b border-white/8 align-top">
+                                            <td className="p-2 text-white/70">
+                                              {formatDateTime(l.created_at)}
+                                            </td>
+                                            <td className="p-2">{parsedLog.cassetteCount || "—"}</td>
+                                            <td className="p-2">{parsedLog.goldBarCount || "—"}</td>
+                                            <td className="p-2">{parsedLog.antiqueCount || "—"}</td>
+                                            <td className="p-2">
+                                              {parsedLog.gross.toLocaleString()}$
+                                            </td>
+                                            <td className="p-2">
+                                              {parsedLog.net.toLocaleString()}$
+                                            </td>
+                                            <td className="p-2 text-white/70">
+                                              {l.uploaded_by
+                                                ? memberName.get(l.uploaded_by) || "—"
+                                                : "—"}
+                                            </td>
+                                            <td className="p-2 text-right">
+                                              <button
+                                                onClick={() => deleteLog(l.id)}
+                                                disabled={busy === `dlog:${l.id}` || isLocked}
+                                                className="rounded bg-white/10 px-2 py-1 hover:bg-white/15 disabled:opacity-60"
+                                              >
+                                                {busy === `dlog:${l.id}` ? "…" : "Törlés"}
+                                              </button>
+                                            </td>
+                                          </tr>
+
+                                          {parsedLog.goldBarLines.map((goldLine, idx) => (
+                                            <tr
+                                              key={`${l.id}:gold:${idx}`}
+                                              className="border-b border-white/8 bg-black/10"
+                                            >
+                                              <td className="p-2 text-xs text-white/45">Aranyrúd</td>
+                                              <td className="p-2 text-xs text-white/45" colSpan={6}>
+                                                {goldLine}
+                                              </td>
+                                              <td className="p-2" />
+                                            </tr>
+                                          ))}
+
+                                          {parsedLog.antiqueLines.map((antiqueLine, idx) => (
+                                            <tr
+                                              key={`${l.id}:antique:${idx}`}
+                                              className="border-b border-white/8 bg-black/10"
+                                            >
+                                              <td className="p-2 text-xs text-white/45">Antik</td>
+                                              <td className="p-2 text-xs text-white/45" colSpan={6}>
+                                                {antiqueLine}
+                                              </td>
+                                              <td className="p-2" />
+                                            </tr>
+                                          ))}
+                                        </Fragment>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      )}
+                      </section>
+
+                      <section>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-xl font-semibold text-white">Bizonyító képek (Imgur)</h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/70" />
+                          </div>
+
+                          <button
+                            onClick={() => addImgur(a.id)}
+                            disabled={busy === `img:${a.id}` || isLocked}
+                            className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-60"
+                          >
+                            {busy === `img:${a.id}` ? "Mentés…" : "Imgur link hozzáadás"}
+                          </button>
+                        </div>
+
+                        {ims.length === 0 ? (
+                          <div className="mt-4 text-white/70">Még nincs kép.</div>
+                        ) : (
+                          <div className="mt-5 space-y-3">
+                            {ims.map((im) => (
+                              <div
+                                key={im.id}
+                                className="flex items-start justify-between gap-3 border-b border-white/8 pb-3"
+                              >
+                                <div className="min-w-0">
+                                  <a
+                                    href={im.imgur_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="break-all text-sm hover:underline"
+                                  >
+                                    {im.imgur_url}
+                                  </a>
+                                  <div className="mt-1 text-xs text-white/60">
+                                    {formatDateTime(im.created_at)} — feltöltötte:{" "}
+                                    <span className="text-white/80">
+                                      {im.uploaded_by ? memberName.get(im.uploaded_by) || "—" : "—"}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <button
+                                  onClick={() => deleteImgur(im.id)}
+                                  disabled={busy === `dimg:${im.id}` || isLocked}
+                                  className="shrink-0 rounded bg-white/10 px-2 py-1 hover:bg-white/15 disabled:opacity-60"
+                                >
+                                  {busy === `dimg:${im.id}` ? "…" : "Törlés"}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </section>
                     </div>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
     </div>
   );
 }

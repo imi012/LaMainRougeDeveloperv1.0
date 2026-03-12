@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { isLeadershipProfile } from "@/lib/permissions";
+import RankBadge from "@/app/app/_components/rank-badge";
 
 type ProfileRow = {
   user_id: string;
@@ -297,17 +298,16 @@ export default function JarmuvekPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function getAllowedRankLabels(vehicle: VehicleRow) {
+  function getAllowedRankItems(vehicle: VehicleRow) {
     const ids = Array.isArray(vehicle.allowed_rank_ids) ? vehicle.allowed_rank_ids : [];
     if (ids.length === 0) {
-      return ["Minden tag használhatja"];
+      return [{ name: "Minden tag használhatja", archived: false }];
     }
 
     return ids.map((rankId) => {
       const rank = rankMap.get(rankId);
-      if (!rank) return "Törölt rang";
-      if (rank.is_archived) return `${rank.name} (archivált)`;
-      return rank.name;
+      if (!rank) return { name: "Törölt rang", archived: false };
+      return { name: rank.name, archived: rank.is_archived };
     });
   }
 
@@ -657,10 +657,11 @@ export default function JarmuvekPage() {
       .select("id, vehicle_id, revoked_until, note, created_at, updated_at")
       .single();
 
-    setCreatingRevocationForVehicleId(null);
+    setCreatingRevocationForVehicleId(vehicleId);
 
     if (insertError) {
       setError(insertError.message);
+      setCreatingRevocationForVehicleId(null);
       return;
     }
 
@@ -681,6 +682,7 @@ export default function JarmuvekPage() {
         note: "",
       },
     }));
+    setCreatingRevocationForVehicleId(null);
   }
 
   async function saveRevocation(revocationId: string) {
@@ -901,7 +903,7 @@ export default function JarmuvekPage() {
                         }))
                       }
                     />
-                    <span className="text-sm">{rank.name}</span>
+                    <RankBadge name={rank.name} />
                   </label>
                 );
               })}
@@ -992,14 +994,21 @@ export default function JarmuvekPage() {
                       Jogosult rangok / forgalmi / figyelmeztetések
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {getAllowedRankLabels(vehicle).map((label, index) => (
-                        <span
-                          key={`${vehicle.id}-rank-${index}`}
-                          className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/75"
-                        >
-                          {label}
-                        </span>
-                      ))}
+                      {getAllowedRankItems(vehicle).map((item, index) =>
+                        item.name === "Minden tag használhatja" ? (
+                          <span
+                            key={`${vehicle.id}-rank-${index}`}
+                            className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/75"
+                          >
+                            {item.name}
+                          </span>
+                        ) : (
+                          <div key={`${vehicle.id}-rank-${index}`} className="flex items-center gap-2">
+                            <RankBadge name={item.name} />
+                            {item.archived ? <span className="text-xs text-white/45">(archivált)</span> : null}
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
 
@@ -1195,7 +1204,7 @@ export default function JarmuvekPage() {
                                     checked={checked}
                                     onChange={() => toggleVehicleRank(vehicle.id, rank.id)}
                                   />
-                                  <span className="text-sm">{rank.name}</span>
+                                  <RankBadge name={rank.name} />
                                 </label>
                               );
                             })}
@@ -1573,14 +1582,21 @@ export default function JarmuvekPage() {
                       <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                         <div className="text-sm text-white/60">Használható rangok</div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {getAllowedRankLabels(vehicle).map((label, index) => (
-                            <span
-                              key={`${vehicle.id}-member-rank-${index}`}
-                              className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/75"
-                            >
-                              {label}
-                            </span>
-                          ))}
+                          {getAllowedRankItems(vehicle).map((item, index) =>
+                            item.name === "Minden tag használhatja" ? (
+                              <span
+                                key={`${vehicle.id}-member-rank-${index}`}
+                                className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/75"
+                              >
+                                {item.name}
+                              </span>
+                            ) : (
+                              <div key={`${vehicle.id}-member-rank-${index}`} className="flex items-center gap-2">
+                                <RankBadge name={item.name} />
+                                {item.archived ? <span className="text-xs text-white/45">(archivált)</span> : null}
+                              </div>
+                            )
+                          )}
                         </div>
                       </div>
 

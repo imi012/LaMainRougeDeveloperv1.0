@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import DecisionBadge from "@/app/app/_components/decision-badge";
+import RankBadge from "@/app/app/_components/rank-badge";
 
 type MySubmission = {
   id: string;
@@ -118,10 +119,40 @@ export default function LeadandoPage() {
 
       <section className="lmr-card rounded-[28px] p-5 md:p-6">
         <h2 className="text-xl font-semibold">Tájékoztató</h2>
+
         <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="lmr-surface-soft rounded-[24px] p-4 text-sm text-white/80">Soldat - Vellieur: <span className="font-semibold text-white">250k / hét</span></div>
-          <div className="lmr-surface-soft rounded-[24px] p-4 text-sm text-white/80">Borreau - Briscard: <span className="font-semibold text-white">150k / hét</span></div>
-          <div className="lmr-surface-soft rounded-[24px] p-4 text-sm text-white/80">Borreautól - Decopeur-ig: heti <span className="font-semibold text-white">2 RP</span> kiválthatja.</div>
+          <div className="lmr-surface-soft rounded-[24px] p-4 text-sm text-white/80">
+            <div className="flex flex-wrap items-center gap-2">
+              <RankBadge name="Soldat" />
+              <span className="text-white/55">-</span>
+              <RankBadge name="Veilleur" />
+            </div>
+            <div className="mt-3">
+              <span className="font-semibold text-white">250k / hét</span>
+            </div>
+          </div>
+
+          <div className="lmr-surface-soft rounded-[24px] p-4 text-sm text-white/80">
+            <div className="flex flex-wrap items-center gap-2">
+              <RankBadge name="Borreau" />
+              <span className="text-white/55">-</span>
+              <RankBadge name="Briscard" />
+            </div>
+            <div className="mt-3">
+              <span className="font-semibold text-white">150k / hét</span>
+            </div>
+          </div>
+
+          <div className="lmr-surface-soft rounded-[24px] p-4 text-sm text-white/80">
+            <div className="flex flex-wrap items-center gap-2">
+              <RankBadge name="Borreau" />
+              <span className="text-white/55">-</span>
+              <span className="font-semibold text-white">Decopeur</span>
+            </div>
+            <div className="mt-3">
+              heti <span className="font-semibold text-white">2 RP</span> kiválthatja.
+            </div>
+          </div>
         </div>
       </section>
 

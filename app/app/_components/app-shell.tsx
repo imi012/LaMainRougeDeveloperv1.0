@@ -65,7 +65,7 @@ export default function AppShell({
       }
     }
 
-    loadProfile();
+    void loadProfile();
 
     return () => {
       cancelled = true;
@@ -88,13 +88,13 @@ export default function AppShell({
     }`;
 
   return (
-    <div className="lmr-app relative min-h-screen overflow-x-hidden text-white flex flex-col">
+    <div className="lmr-app relative flex min-h-screen flex-col overflow-x-hidden text-white">
       <div className="fixed inset-0 -z-30" />
       <div className="fixed inset-0 -z-20 bg-[radial-gradient(circle_at_center,rgba(120,0,0,0.10),rgba(0,0,0,0.52)_45%,rgba(0,0,0,0.80)_100%)]" />
       <div className="fixed inset-0 -z-10 bg-black/28" />
 
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/8 bg-black/18 backdrop-blur-xl">
-        <div className="mx-auto flex h-[70px] max-w-[1600px] items-center gap-3 px-4 md:px-6">
+        <div className="lmr-shell-container flex h-[70px] items-center gap-3 px-4 md:px-6">
           <button
             className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] transition hover:bg-white/[0.06]"
             onClick={() => setOpen((v) => !v)}
@@ -139,7 +139,7 @@ export default function AppShell({
         </div>
       </header>
 
-      <div className="mx-auto flex flex-1 max-w-[1600px] items-start px-2 pb-6 pt-[82px] md:px-4 md:pt-[86px]">
+      <div className="lmr-shell-container flex flex-1 items-start px-2 pb-6 pt-[82px] md:px-4 md:pt-[86px]">
         <aside
           className={`fixed z-40 overflow-hidden rounded-[28px] backdrop-blur-xl transition-all duration-300 ${
             open
@@ -148,7 +148,7 @@ export default function AppShell({
           }`}
           style={{
             top: "90px",
-            left: "max(8px, calc((100vw - 1600px) / 2 + 8px))",
+            left: "max(8px, calc((100vw - min(1440px, 100vw)) / 2 + 8px))",
             height: "calc(100vh - 110px)",
           }}
         >

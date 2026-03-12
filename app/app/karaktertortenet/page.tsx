@@ -46,17 +46,24 @@ export default function Page() {
   const [row, setRow] = useState<LoreRow | null>(null);
 
   async function authedFetch(url: string, init?: RequestInit) {
-    const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) };
+    const headers: Record<string, string> = {
+      ...(init?.headers as Record<string, string> | undefined),
+    };
     if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(url, { ...init, headers });
     const text = await res.text();
     let json: any = {};
+
     try {
       json = text ? JSON.parse(text) : {};
     } catch {
       json = {};
     }
-    if (!res.ok || json?.ok === false) throw new Error(json?.message || text || "Hiba történt.");
+
+    if (!res.ok || json?.ok === false) {
+      throw new Error(json?.message || text || "Hiba történt.");
+    }
+
     return json;
   }
 
@@ -66,10 +73,9 @@ export default function Page() {
     async function load() {
       try {
         setError(null);
-        const [{ data: userData, error: userErr }, { data: sessData, error: sessErr }] = await Promise.all([
-          supabase.auth.getUser(),
-          supabase.auth.getSession(),
-        ]);
+
+        const [{ data: userData, error: userErr }, { data: sessData, error: sessErr }] =
+          await Promise.all([supabase.auth.getUser(), supabase.auth.getSession()]);
 
         if (userErr) throw new Error(userErr.message || "Nem sikerült lekérni a felhasználót.");
         if (sessErr) throw new Error(sessErr.message || "Nem sikerült lekérni a munkamenetet.");
@@ -78,12 +84,18 @@ export default function Page() {
         const accessToken = sessData.session?.access_token ?? null;
         if (!accessToken) throw new Error("Hiányzik a munkamenet token.");
         if (cancelled) return;
+
         setToken(accessToken);
 
-        const res = await fetch("/api/lore/mine", { headers: { Authorization: `Bearer ${accessToken}` } });
+        const res = await fetch("/api/lore/mine", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
         const text = await res.text();
         const json = text ? JSON.parse(text) : {};
-        if (!res.ok || json?.ok === false) throw new Error(json?.message || "Nem sikerült betölteni a karaktertörténetet.");
+
+        if (!res.ok || json?.ok === false) {
+          throw new Error(json?.message || "Nem sikerült betölteni a karaktertörténetet.");
+        }
         if (cancelled) return;
 
         const current = (json.row ?? null) as LoreRow | null;
@@ -96,6 +108,7 @@ export default function Page() {
     }
 
     load();
+
     return () => {
       cancelled = true;
     };
@@ -134,37 +147,55 @@ export default function Page() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <section className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] px-6 py-6 md:px-8 md:py-7">
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Karaktertörténet</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-white/72">
-          Itt tudod leadni vagy frissíteni a karaktertörténetedet a vezetőség számára. A karaktered háttere, megjelenése és viselkedése legyen illeszkedő a frakció tematikájához.
-        </p>
+    <div className="lmr-page lmr-page-compact">
+      <section className="lmr-hero">
+        <div className="max-w-4xl">
+          <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
+            Karaktertörténet
+          </h1>
+
+          <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-white/72">
+            Itt tudod leadni vagy frissíteni a karaktertörténetedet a vezetőség
+            számára. A karaktered háttér storyja, megjelenése és viselkedése legyen
+            illeszkedő a frakció tematikájához.
+          </p>
+        </div>
       </section>
 
-      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.035] shadow-[0_18px_60px_rgba(0,0,0,0.24)] backdrop-blur-xl">
-        <div className="border-b border-white/10 bg-black/18 px-5 py-4">
-          <h2 className="text-sm font-medium uppercase tracking-[0.16em] text-white/72">Karakterútmutató</h2>
-        </div>
+      <section className="mt-10">
+        <h2 className="text-2xl font-semibold text-white">Karakterútmutató</h2>
+        <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
 
-        <div className="space-y-3 p-5 text-sm leading-7 text-white/78 md:p-6">
-          <p>Kedves új tagjaink!</p>
+        <div className="mt-6 space-y-3 text-sm leading-7 text-white/78">
+          <p>Kedves új Tagjaink!</p>
           <p>• Az alap a francia név, hiszen mégiscsak egy francia MOB-ról van szó.</p>
           <p>• A tagok fiatalok, nagyjából 20–30 év közöttiek.</p>
-          <p>• Gondolj ki egy érdekes, hiteles sztorit, ami megmagyarázza, hogyan kerültél ide.</p>
-          <p>• Ne érkezz koszosan, csákánnyal a hátadon vagy virággal az oldaladon – kerüld a fun skineket és kiegészítőket.</p>
-          <p>• A hierarchia alapvető: bánj tisztelettel mindenkivel, és úgy közeledj az adott személyhez a HQ-n, ahogy a rang megkívánja.</p>
+          <p>
+            • Gondolj ki egy érdekes, hiteles sztorit, ami megmagyarázza, hogyan
+            kerültél ide.
+          </p>
+          <p>
+            • Ne érkezz koszosan, csákánnyal a hátadon vagy virággal az oldaladon –
+            kerüld a fun skineket és kiegészítőket.
+          </p>
+          <p>
+            • A hierarchia alapvető: bánj tisztelettel mindenkivel, és úgy
+            közeledj az adott személyhez a HQ-n, ahogy a rang megkívánja.
+          </p>
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.035] shadow-[0_18px_60px_rgba(0,0,0,0.24)] backdrop-blur-xl">
-        <div className="border-b border-white/10 bg-black/18 px-5 py-4">
-          <h2 className="text-sm font-medium uppercase tracking-[0.16em] text-white/72">Beküldés</h2>
-        </div>
+      <section className="mt-12">
+        <h2 className="text-2xl font-semibold text-white">Beküldés</h2>
+        <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
 
-        <div className="grid gap-5 p-5 md:p-6">
+        <div className="mt-6 grid gap-5">
           <div>
-            <label className="mb-2 block text-sm font-medium text-white/82">Discord neved</label>
+            <label className="mb-2 block text-sm font-medium text-white/82">
+              Discord neved
+            </label>
             <input
               value={discordName}
               onChange={(e) => setDiscordName(e.target.value)}
@@ -174,7 +205,9 @@ export default function Page() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-white/82">Karaktertörténet linke (lehetőleg Pastebin)</label>
+            <label className="mb-2 block text-sm font-medium text-white/82">
+              Karaktertörténet linke (lehetőleg Pastebin)
+            </label>
             <input
               value={pastebinUrl}
               onChange={(e) => setPastebinUrl(e.target.value)}
@@ -183,8 +216,17 @@ export default function Page() {
             />
           </div>
 
-          {error ? <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div> : null}
-          {success ? <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{success}</div> : null}
+          {error ? (
+            <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              {error}
+            </div>
+          ) : null}
+
+          {success ? (
+            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+              {success}
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -197,32 +239,45 @@ export default function Page() {
 
             <div className="flex items-center gap-2 text-sm text-white/65">
               <span>Állapot:</span>
-              {row ? <DecisionBadge value={row.is_approved ? "approved" : "pending"} /> : <span className="text-white/72">Nincs még leadva</span>}
+              {row ? (
+                <DecisionBadge value={row.is_approved ? "approved" : "pending"} />
+              ) : (
+                <span className="text-white/72">Nincs még leadva</span>
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.035] shadow-[0_18px_60px_rgba(0,0,0,0.24)] backdrop-blur-xl">
-        <div className="border-b border-white/10 bg-black/18 px-5 py-4">
-          <h2 className="text-sm font-medium uppercase tracking-[0.16em] text-white/72">Jelenlegi leadás</h2>
-        </div>
+      <section className="mt-12">
+        <h2 className="text-2xl font-semibold text-white">Jelenlegi leadás</h2>
+        <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
 
-        <div className="p-5 md:p-6 text-sm text-white/80">
+        <div className="mt-6 text-sm text-white/80">
           {row ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-white/45">Discord név</div>
-                <div className="mt-2 text-base font-medium text-white">{row.discord_name || "—"}</div>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <div className="text-xs uppercase tracking-[0.18em] text-white/45">
+                  Discord név
+                </div>
+                <div className="mt-2 text-base font-medium text-white">
+                  {row.discord_name || "—"}
+                </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-white/45">Beküldve</div>
-                <div className="mt-2 text-base font-medium text-white">{fmt(row.submitted_at)}</div>
+              <div>
+                <div className="text-xs uppercase tracking-[0.18em] text-white/45">
+                  Beküldve
+                </div>
+                <div className="mt-2 text-base font-medium text-white">
+                  {fmt(row.submitted_at)}
+                </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 md:col-span-2">
-                <div className="text-xs uppercase tracking-[0.18em] text-white/45">Link</div>
+              <div className="md:col-span-2">
+                <div className="text-xs uppercase tracking-[0.18em] text-white/45">
+                  Link
+                </div>
                 <a
                   className="mt-2 inline-block break-all text-base text-white underline decoration-white/35 underline-offset-4 hover:text-white/82"
                   href={normalizeUrl(row.pastebin_url || row.lore_url || "")}
@@ -234,7 +289,7 @@ export default function Page() {
               </div>
             </div>
           ) : (
-            <div className="lmr-empty-state rounded-2xl px-5 py-10 text-sm">
+            <div className="text-sm text-white/60">
               Még nincs leadott karaktertörténet.
             </div>
           )}

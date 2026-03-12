@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isLeadershipProfile } from "@/lib/permissions";
+import RankBadge from "@/app/app/_components/rank-badge";
 
 type ProfileRow = {
   user_id: string;
@@ -694,7 +695,14 @@ export default function ProfilePage() {
                   </h1>
 
                   <div className="mt-5 space-y-2 text-sm text-white/62">
-                    <p>Rang: {rank?.name ?? (rankMissing ? "Törölt rang" : "—")}</p>
+                    <div className="flex items-center justify-center gap-2">
+                      <span>Rang:</span>
+                      {rank?.name ? (
+                        <RankBadge name={rank.name} />
+                      ) : (
+                        <span>{rankMissing ? "Törölt rang" : "—"}</span>
+                      )}
+                    </div>
                     <p>Státusz: {profile.status ?? "—"}</p>
                   </div>
 

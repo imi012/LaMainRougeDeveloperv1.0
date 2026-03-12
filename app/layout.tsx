@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-// Dev-only: lock AbortError overlay lenyelése
 import DevAbortErrorSilencer from "./app/_components/DevAbortErrorSilencer";
 
 const geistSans = Geist({

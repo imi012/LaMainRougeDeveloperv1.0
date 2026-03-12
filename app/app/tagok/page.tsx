@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { isLeadershipProfile } from "@/lib/permissions";
+import RankBadge from "@/app/app/_components/rank-badge";
 
 type Rank = {
   id: string;
@@ -50,6 +51,29 @@ function isVisibleMemberStatus(status: string | null | undefined) {
   return status === "pending" || status === "active" || status === "leadership";
 }
 
+function normalizeName(value: string | null | undefined) {
+  return (value ?? "").trim().toLocaleLowerCase("hu");
+}
+
+function sortMembersByRankPriority(rows: MemberRow[], ranks: Rank[]) {
+  const rankMap = new Map<string, Rank>();
+  ranks.forEach((r) => rankMap.set(r.id, r));
+
+  return [...rows].sort((a, b) => {
+    const aRank = a.rank_id ? rankMap.get(a.rank_id) : null;
+    const bRank = b.rank_id ? rankMap.get(b.rank_id) : null;
+
+    const aPriority = aRank?.priority ?? Number.MAX_SAFE_INTEGER;
+    const bPriority = bRank?.priority ?? Number.MAX_SAFE_INTEGER;
+
+    if (aPriority !== bPriority) {
+      return aPriority - bPriority;
+    }
+
+    return normalizeName(a.ic_name).localeCompare(normalizeName(b.ic_name), "hu");
+  });
+}
+
 export default function MembersPage() {
   const supabase = createClient();
 
@@ -89,8 +113,8 @@ export default function MembersPage() {
     return visible.filter((r) => r.priority >= myRank.priority);
   }, [canManage, isOwner, myRank, ranks]);
 
-  function getRankLabel(rankId: string | null) {
-    if (!rankId) return "—";
+  function getRankName(rankId: string | null) {
+    if (!rankId) return null;
     const rank = rankMap.get(rankId);
     return rank ? rank.name : "Törölt rang";
   }
@@ -168,8 +192,10 @@ export default function MembersPage() {
       return;
     }
 
-    const visibleRows = ((memberData ?? []) as MemberRow[]).filter((r) => isVisibleMemberStatus(r.status));
-    setRows(visibleRows);
+    const visibleRows = ((memberData ?? []) as MemberRow[]).filter((r) =>
+      isVisibleMemberStatus(r.status)
+    );
+    setRows(sortMembersByRankPriority(visibleRows, rankRows));
 
     const visibleUserIds = visibleRows.map((r) => r.user_id);
 
@@ -177,7 +203,10 @@ export default function MembersPage() {
       .from("leadando_submissions")
       .select("user_id,approved_at,is_approved")
       .eq("is_approved", true)
-      .in("user_id", visibleUserIds.length > 0 ? visibleUserIds : ["00000000-0000-0000-0000-000000000000"])
+      .in(
+        "user_id",
+        visibleUserIds.length > 0 ? visibleUserIds : ["00000000-0000-0000-0000-000000000000"]
+      )
       .order("approved_at", { ascending: false });
 
     if (!leadErr) {
@@ -196,7 +225,10 @@ export default function MembersPage() {
       .from("warnings")
       .select("id,user_id,is_active,expires_at")
       .eq("is_active", true)
-      .in("user_id", visibleUserIds.length > 0 ? visibleUserIds : ["00000000-0000-0000-0000-000000000000"]);
+      .in(
+        "user_id",
+        visibleUserIds.length > 0 ? visibleUserIds : ["00000000-0000-0000-0000-000000000000"]
+      );
 
     if (!warnErr) {
       const map: Record<string, number> = {};
@@ -232,9 +264,12 @@ export default function MembersPage() {
     }
 
     setRows((prev) =>
-      prev
-        .map((r) => (r.user_id === user_id ? { ...r, ...patch } : r))
-        .filter((r) => isVisibleMemberStatus(r.status))
+      sortMembersByRankPriority(
+        prev
+          .map((r) => (r.user_id === user_id ? { ...r, ...patch } : r))
+          .filter((r) => isVisibleMemberStatus(r.status)),
+        ranks
+      )
     );
 
     setBusyUserId(null);
@@ -251,7 +286,8 @@ export default function MembersPage() {
       return;
     }
 
-    const expiresAt = warnExpires.trim() !== "" ? new Date(`${warnExpires}T23:59:59`).toISOString() : null;
+    const expiresAt =
+      warnExpires.trim() !== "" ? new Date(`${warnExpires}T23:59:59`).toISOString() : null;
 
     setError(null);
     setBusyUserId(targetUserId);
@@ -284,29 +320,24 @@ export default function MembersPage() {
   if (loading) {
     return (
       <div className="lmr-page">
-        <div className="lmr-card rounded-[28px] p-6 text-sm text-white/70">Betöltés...</div>
+        <div className="px-1 py-6 text-sm text-white/70">Betöltés...</div>
       </div>
     );
   }
 
   return (
     <div className="lmr-page">
-      <section className="lmr-hero rounded-[28px] p-6 md:p-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <span className="lmr-chip inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-              Tagok
-            </span>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">Taglista</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/75 md:text-base">
-              InGame név, rang, utolsó jóváhagyott leadandó és az aktív figyelmeztetések száma egy
-              egységes áttekintő nézetben.
-            </p>
-          </div>
+      <section className="lmr-hero">
+        <div className="max-w-4xl">
+          <span className="lmr-chip inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+            Tagok
+          </span>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/75">
-            {canManage ? "Kezelő mód" : "Megtekintés"}
-          </div>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">
+            Taglista
+          </h1>
+
+          <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
         </div>
       </section>
 
@@ -316,8 +347,8 @@ export default function MembersPage() {
         </div>
       )}
 
-      <section className="lmr-card overflow-hidden rounded-[28px]">
-        <div className="lmr-card-header grid grid-cols-12 gap-2 px-4 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-white/62 md:px-5">
+      <section className="overflow-hidden">
+        <div className="grid grid-cols-12 gap-2 border-b border-white/10 px-4 py-4 text-xs font-semibold uppercase tracking-[0.14em] text-white/62 md:px-5">
           <div className="col-span-4">InGame név</div>
           <div className="col-span-3">Rang</div>
           <div className="col-span-2">Leadandó leadva</div>
@@ -325,138 +356,144 @@ export default function MembersPage() {
           <div className="col-span-2 text-right">Művelet</div>
         </div>
 
-        {rows.map((m) => {
-          const targetEditable = canEditTarget(m);
-          const rank = m.rank_id ? rankMap.get(m.rank_id) : null;
-          const leadUntil = lastLeadandoByUser[m.user_id] ?? null;
-          const warnCount = warningCountByUser[m.user_id] ?? 0;
+        <div className="max-h-[65vh] overflow-y-auto pr-1">
+          {rows.map((m) => {
+            const targetEditable = canEditTarget(m);
+            const rank = m.rank_id ? rankMap.get(m.rank_id) : null;
+            const leadUntil = lastLeadandoByUser[m.user_id] ?? null;
+            const warnCount = warningCountByUser[m.user_id] ?? 0;
 
-          return (
-            <div key={m.user_id} className="border-t border-white/8 first:border-t-0">
-              <div className="grid grid-cols-12 gap-2 px-4 py-4 md:px-5">
-                <div className="col-span-4">
-                  <div className="font-semibold text-white">{m.ic_name ?? "—"}</div>
-                  <div className="mt-1 text-xs text-white/55">
-                    <Link className="underline underline-offset-4" href={`/app/profile?user=${m.user_id}`}>
-                      Profil megnyitása
+            return (
+              <div key={m.user_id} className="border-b border-white/8 last:border-b-0">
+                <div className="grid grid-cols-12 gap-2 px-4 py-4 md:px-5">
+                  <div className="col-span-4 flex items-center">
+                    <Link
+                      href={`/app/profile?user=${m.user_id}`}
+                      className="font-semibold text-white transition hover:text-white/75"
+                    >
+                      {m.ic_name ?? "—"}
                     </Link>
                   </div>
-                </div>
 
-                <div className="col-span-3">
-                  {canManage && targetEditable ? (
-                    <select
-                      className="w-full rounded-2xl border px-3 py-2.5 text-sm"
-                      value={m.rank_id ?? ""}
-                      onChange={(e) => updateMember(m.user_id, { rank_id: e.target.value || null })}
-                      disabled={busyUserId === m.user_id}
-                    >
-                      <option value="">—</option>
-                      {rank && rank.is_archived && <option value={rank.id}>{rank.name} (archivált)</option>}
-                      {assignableRanks
-                        .filter((r) => !(rank && rank.is_archived && r.id === m.rank_id))
-                        .map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                    </select>
-                  ) : (
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-white/80">
-                      {getRankLabel(m.rank_id)}
+                  <div className="col-span-3">
+                    {canManage && targetEditable ? (
+                      <select
+                        className="w-full rounded-2xl border px-3 py-2.5 text-sm"
+                        value={m.rank_id ?? ""}
+                        onChange={(e) => updateMember(m.user_id, { rank_id: e.target.value || null })}
+                        disabled={busyUserId === m.user_id}
+                      >
+                        <option value="">—</option>
+                        {rank && rank.is_archived && (
+                          <option value={rank.id}>{rank.name} (archivált)</option>
+                        )}
+                        {assignableRanks
+                          .filter((r) => !(rank && rank.is_archived && r.id === m.rank_id))
+                          .map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                            </option>
+                          ))}
+                      </select>
+                    ) : (
+                      <div className="px-3 py-2.5 text-white/80">
+                        {getRankName(m.rank_id) ? <RankBadge name={getRankName(m.rank_id)} /> : "—"}
+                      </div>
+                    )}
+
+                    {canManage && targetEditable && m.rank_id && !rank && (
+                      <div className="mt-2 text-xs text-red-200/85">
+                        A felhasználóhoz törölt rang van rendelve.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="col-span-2 flex items-center">
+                    <div className="text-white/78">{formatDateYMD(leadUntil)}</div>
+                  </div>
+
+                  <div className="col-span-1 flex items-center justify-center">
+                    <div className="inline-flex min-w-10 justify-center rounded-full border border-white/12 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-white/85">
+                      {warnCount}
                     </div>
-                  )}
+                  </div>
 
-                  {canManage && targetEditable && m.rank_id && !rank && (
-                    <div className="mt-2 text-xs text-red-200/85">A felhasználóhoz törölt rang van rendelve.</div>
-                  )}
-                </div>
-
-                <div className="col-span-2 flex items-center">
-                  <div className="text-white/78">{formatDateYMD(leadUntil)}</div>
-                </div>
-
-                <div className="col-span-1 flex items-center justify-center">
-                  <div className="inline-flex min-w-10 justify-center rounded-full border border-white/12 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-white/85">
-                    {warnCount}
+                  <div className="col-span-2 flex items-center justify-end gap-2">
+                    {canManage && targetEditable ? (
+                      <button
+                        className="lmr-btn rounded-2xl px-3.5 py-2 text-sm text-white/90"
+                        onClick={() => setWarnOpenFor(warnOpenFor === m.user_id ? null : m.user_id)}
+                      >
+                        Figyelmeztetés
+                      </button>
+                    ) : (
+                      <span className="text-sm text-white/45">—</span>
+                    )}
                   </div>
                 </div>
 
-                <div className="col-span-2 flex items-center justify-end gap-2">
-                  {canManage && targetEditable ? (
-                    <button
-                      className="lmr-btn rounded-2xl px-3.5 py-2 text-sm text-white/90"
-                      onClick={() => setWarnOpenFor(warnOpenFor === m.user_id ? null : m.user_id)}
-                    >
-                      Figyelmeztetés
-                    </button>
-                  ) : (
-                    <span className="text-sm text-white/45">—</span>
-                  )}
-                </div>
+                {warnOpenFor === m.user_id && canManage && targetEditable && (
+                  <div className="px-4 pb-4 md:px-5 md:pb-5">
+                    <div className="border-t border-white/8 pt-4">
+                      <div className="mb-3 text-sm font-semibold text-white">
+                        Figyelmeztetés hozzáadása
+                      </div>
+
+                      <div className="grid grid-cols-12 items-end gap-3">
+                        <div className="col-span-12 md:col-span-7">
+                          <label className="text-xs uppercase tracking-[0.14em] text-white/55">
+                            Ok
+                          </label>
+                          <input
+                            className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm"
+                            value={warnReason}
+                            onChange={(e) => setWarnReason(e.target.value)}
+                            placeholder="Pl.: Szabályszegés / AFK / ..."
+                          />
+                        </div>
+
+                        <div className="col-span-12 md:col-span-3">
+                          <label className="text-xs uppercase tracking-[0.14em] text-white/55">
+                            Lejárat
+                          </label>
+                          <input
+                            type="date"
+                            className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm"
+                            value={warnExpires}
+                            onChange={(e) => setWarnExpires(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="col-span-12 md:col-span-2 flex gap-2">
+                          <button
+                            className="lmr-btn lmr-btn-primary w-full rounded-2xl px-3 py-2.5 text-sm font-medium"
+                            onClick={() => addWarning(m.user_id)}
+                            disabled={busyUserId === m.user_id}
+                          >
+                            Mentés
+                          </button>
+                          <button
+                            className="lmr-btn w-full rounded-2xl px-3 py-2.5 text-sm"
+                            onClick={() => {
+                              setWarnOpenFor(null);
+                              setWarnReason("");
+                              setWarnExpires("");
+                            }}
+                          >
+                            Mégse
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
+            );
+          })}
 
-              {warnOpenFor === m.user_id && canManage && targetEditable && (
-                <div className="px-4 pb-4 md:px-5 md:pb-5">
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
-                    <div className="mb-3 text-sm font-semibold text-white">Figyelmeztetés hozzáadása</div>
-
-                    <div className="grid grid-cols-12 items-end gap-3">
-                      <div className="col-span-12 md:col-span-7">
-                        <label className="text-xs uppercase tracking-[0.14em] text-white/55">Ok</label>
-                        <input
-                          className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm"
-                          value={warnReason}
-                          onChange={(e) => setWarnReason(e.target.value)}
-                          placeholder="Pl.: Szabályszegés / AFK / ..."
-                        />
-                      </div>
-
-                      <div className="col-span-12 md:col-span-3">
-                        <label className="text-xs uppercase tracking-[0.14em] text-white/55">Lejárat</label>
-                        <input
-                          type="date"
-                          className="mt-2 w-full rounded-2xl border px-3 py-2.5 text-sm"
-                          value={warnExpires}
-                          onChange={(e) => setWarnExpires(e.target.value)}
-                        />
-                      </div>
-
-                      <div className="col-span-12 md:col-span-2 flex gap-2">
-                        <button
-                          className="lmr-btn lmr-btn-primary w-full rounded-2xl px-3 py-2.5 text-sm font-medium"
-                          onClick={() => addWarning(m.user_id)}
-                          disabled={busyUserId === m.user_id}
-                        >
-                          Mentés
-                        </button>
-                        <button
-                          className="lmr-btn w-full rounded-2xl px-3 py-2.5 text-sm"
-                          onClick={() => {
-                            setWarnOpenFor(null);
-                            setWarnReason("");
-                            setWarnExpires("");
-                          }}
-                        >
-                          Mégse
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {rows.length === 0 && (
-          <div className="lmr-empty-state m-4 rounded-[24px] px-4 py-8 text-sm">Nincs megjeleníthető tag.</div>
-        )}
-      </section>
-
-      <section className="lmr-card rounded-[28px] p-5">
-        <div className="text-sm text-white/70">
-          Szabály: owner = full. admin = rangot kezelhet prioritás szerint, webjogot csak owner oszthat.
+          {rows.length === 0 && (
+            <div className="px-4 py-8 text-sm text-white/60">Nincs megjeleníthető tag.</div>
+          )}
         </div>
       </section>
     </div>

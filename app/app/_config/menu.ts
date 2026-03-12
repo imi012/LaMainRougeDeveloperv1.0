@@ -14,51 +14,57 @@ export type MenuOptions = {
   showEvents?: boolean;
   showLeadership?: boolean;
   showAuditLog?: boolean;
+  showDictionary?: boolean;
 };
 
-function memberBaseMenu(options?: MenuOptions): MenuSection[] {
+function buildInfoSection(options?: MenuOptions): MenuSection {
+  const showDictionary = !!options?.showDictionary;
+
+  return {
+    title: "Információk",
+    items: [
+      { label: "Profil", href: "/app/profile" },
+      { label: "Skinek", href: "/app/skinek" },
+      { label: "Karaktertörténet", href: "/app/karaktertortenet" },
+      ...(showDictionary ? [{ label: "Szótár", href: "/app/szotar" }] : []),
+      { label: "Frakció szabályzat", href: "/app/szabalyzat" },
+    ],
+  };
+}
+
+function buildFactionSection(options?: MenuOptions): MenuSection {
   const showEvents = !!options?.showEvents;
 
-  return [
-    { items: [{ label: "Profil", href: "/app/profile" }] },
-    {
-      title: "Alap",
-      items: [
-        { label: "Tagok", href: "/app/tagok" },
-        { label: "Akciók", href: "/app/akciok" },
-        ...(showEvents ? [{ label: "Események", href: "/app/esemenyek" }] : []),
-      ],
-    },
-    {
-      title: "Frakció",
-      items: [
-        { label: "Rangok", href: "/app/rangok" },
-        { label: "Járművek", href: "/app/jarmuvek" },
-        { label: "Szereltetés igénylés", href: "/app/szereltetes" },
-        { label: "Leadandó", href: "/app/leadando" },
-        { label: "Karaktertörténet", href: "/app/karaktertortenet" },
-        { label: "Ticketek", href: "/app/ticketek" },
-        { label: "Parkolási rend", href: "/app/parkolas" },
-        { label: "Skinek", href: "/app/skinek" },
-      ],
-    },
-    {
-      title: "Információ",
-      items: [{ label: "Frakció szabályzat", href: "/app/szabalyzat" }],
-    },
-  ];
+  return {
+    title: "Frakció",
+    items: [
+      { label: "Akciók", href: "/app/akciok" },
+      ...(showEvents ? [{ label: "Események", href: "/app/esemenyek" }] : []),
+      { label: "Tagok", href: "/app/tagok" },
+      { label: "Rangok", href: "/app/rangok" },
+      { label: "Járművek", href: "/app/jarmuvek" },
+      { label: "Parkolási rend", href: "/app/parkolas" },
+      { label: "Szereltetés igénylés", href: "/app/szereltetes" },
+      { label: "Leadandó", href: "/app/leadando" },
+      { label: "Ticketek", href: "/app/ticketek" },
+    ],
+  };
+}
+
+function memberBaseMenu(options?: MenuOptions): MenuSection[] {
+  return [buildInfoSection(options), buildFactionSection(options)];
 }
 
 export function getMenuFor(view: AppView, options?: MenuOptions): MenuSection[] {
   if (view === "tgf") {
     return [
-      { items: [{ label: "Profil", href: "/app/profile" }] },
       {
-        title: "TGF",
+        title: "Információk",
         items: [
-          { label: "Helyszín", href: "/app/helyszin" },
+          { label: "Profil", href: "/app/profile" },
           { label: "Skinek", href: "/app/skinek" },
           { label: "Karaktertörténet", href: "/app/karaktertortenet" },
+          ...(options?.showDictionary ? [{ label: "Szótár", href: "/app/szotar" }] : []),
           { label: "Frakció szabályzat", href: "/app/szabalyzat" },
         ],
       },
@@ -69,20 +75,14 @@ export function getMenuFor(view: AppView, options?: MenuOptions): MenuSection[] 
     return memberBaseMenu(options);
   }
 
-  const sections: MenuSection[] = [
-    ...memberBaseMenu({ showEvents: true }),
+  return [
+    ...memberBaseMenu({ showEvents: true, showDictionary: options?.showDictionary }),
     {
       title: "Vezetőség",
-      items: [{ label: "Kezelőpanel", href: "/app/vezetoseg" }],
+      items: [
+        { label: "Kezelőpanel", href: "/app/vezetoseg" },
+        ...(options?.showAuditLog ? [{ label: "Audit log", href: "/app/audit-log" }] : []),
+      ],
     },
   ];
-
-  if (options?.showAuditLog) {
-    sections.push({
-      title: "Admin",
-      items: [{ label: "Audit log", href: "/app/audit-log" }],
-    });
-  }
-
-  return sections;
 }
