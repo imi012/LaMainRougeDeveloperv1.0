@@ -294,21 +294,36 @@ export default function JarmuvekPage() {
   }
 
   useEffect(() => {
-    loadPage();
+    void loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function getAllowedRankItems(vehicle: VehicleRow) {
     const ids = Array.isArray(vehicle.allowed_rank_ids) ? vehicle.allowed_rank_ids : [];
+
     if (ids.length === 0) {
-      return [{ name: "Minden tag használhatja", archived: false }];
+      return [{ name: "Minden tag használhatja", archived: false, priority: Number.MAX_SAFE_INTEGER }];
     }
 
-    return ids.map((rankId) => {
-      const rank = rankMap.get(rankId);
-      if (!rank) return { name: "Törölt rang", archived: false };
-      return { name: rank.name, archived: rank.is_archived };
-    });
+    return ids
+      .map((rankId) => {
+        const rank = rankMap.get(rankId);
+
+        if (!rank) {
+          return {
+            name: "Törölt rang",
+            archived: false,
+            priority: Number.MAX_SAFE_INTEGER,
+          };
+        }
+
+        return {
+          name: rank.name,
+          archived: rank.is_archived,
+          priority: rank.priority ?? Number.MAX_SAFE_INTEGER,
+        };
+      })
+      .sort((a, b) => a.priority - b.priority);
   }
 
   function getVehicleRevocations(vehicleId: string) {
@@ -755,28 +770,42 @@ export default function JarmuvekPage() {
   }
 
   if (loading) {
-    return <div className="mx-auto w-full max-w-7xl rounded-[28px] border border-white/10 bg-white/[0.04] px-6 py-8 text-sm text-white/75">Betöltés…</div>;
+    return (
+      <div className="lmr-page">
+        <div className="px-1 py-6 text-sm text-white/70">Betöltés...</div>
+      </div>
+    );
   }
 
   if (me?.status === "pending") {
     return (
-      <div className="max-w-3xl">
-        <h1 className="text-3xl font-bold">Járművek</h1>
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm text-white/80">
-          Ehhez az oldalhoz jelenleg nincs hozzáférésed.
-        </div>
+      <div className="lmr-page">
+        <section className="space-y-4">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Járművek</h1>
+            <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+          </div>
+          <div className="text-sm text-white/80">
+            Ehhez az oldalhoz jelenleg nincs hozzáférésed.
+          </div>
+        </section>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-[1550px] space-y-6">
-      <section className="lmr-surface-soft rounded-[28px] p-6 md:p-7">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start">
+    <div className="lmr-page lmr-page-wide space-y-8">
+      <section className="space-y-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">La Main Rouge</div>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Járművek</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/70">
+            <span className="lmr-chip inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Járművek
+            </span>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">
+              Járművek
+            </h1>
+            <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/75">
               A frakció járműparkja, jogosult rangok, forgalmi adatok, jogelvételek és figyelmeztetések egységesített felületen.
             </p>
           </div>
@@ -784,7 +813,7 @@ export default function JarmuvekPage() {
           {canEdit && (
             <button
               onClick={() => setCreateOpen((prev) => !prev)}
-              className="ml-auto rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm font-medium hover:bg-white/[0.08]"
+              className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm font-medium"
             >
               {createOpen ? "Űrlap bezárása" : "Új autó felvétele"}
             </button>
@@ -799,10 +828,13 @@ export default function JarmuvekPage() {
       )}
 
       {canEdit && createOpen && (
-        <section className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
-          <h2 className="text-xl font-semibold">Új jármű létrehozása</h2>
+        <section className="space-y-5">
+          <div>
+            <h2 className="text-xl font-semibold text-white">Új jármű létrehozása</h2>
+            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+          </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm text-white/75">Autó típusa</label>
               <input
@@ -876,7 +908,7 @@ export default function JarmuvekPage() {
             </div>
           </div>
 
-          <div className="mt-5">
+          <div>
             <div className="mb-2 block text-sm text-white/75">Használható rangok</div>
             <p className="mb-3 text-xs text-white/55">
               Ha itt semmit nem jelölsz be, akkor a jármű minden tag számára használhatónak számít.
@@ -910,18 +942,18 @@ export default function JarmuvekPage() {
             </div>
           </div>
 
-          <div className="mt-5 flex gap-3">
+          <div className="flex gap-3">
             <button
               onClick={createVehicle}
               disabled={creatingVehicle}
-              className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-50"
+              className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm disabled:opacity-50"
             >
               {creatingVehicle ? "Mentés..." : "Jármű létrehozása"}
             </button>
 
             <button
               onClick={() => setCreateOpen(false)}
-              className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08]"
+              className="lmr-btn rounded-2xl px-4 py-2.5 text-sm"
             >
               Mégse
             </button>
@@ -929,313 +961,318 @@ export default function JarmuvekPage() {
         </section>
       )}
 
-      <section className="lmr-surface-soft overflow-hidden rounded-[26px]">
-        <div className="hidden lg:grid lg:grid-cols-[220px_110px_130px_minmax(480px,1fr)_150px] lg:gap-4 border-b border-white/10 bg-white/5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-white/70">
-          <div>Autó típusa</div>
-          <div>ID</div>
-          <div>Rendszám</div>
-          <div>Jogosult rangok / forgalmi / figyelmeztetések</div>
-          <div className="text-right">Művelet</div>
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Járműlista</h2>
+          <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
         </div>
 
-        {vehicles.length === 0 && (
-          <div className="px-4 py-6 text-sm text-white/70">
-            Még nincs felvéve egyetlen jármű sem.
+        <div className="overflow-hidden border-t border-white/10">
+          <div className="hidden lg:grid lg:grid-cols-[220px_110px_130px_minmax(480px,1fr)_150px] lg:gap-4 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-white/70">
+            <div>Autó típusa</div>
+            <div>ID</div>
+            <div>Rendszám</div>
+            <div>Jogosult rangok / forgalmi / figyelmeztetések</div>
+            <div className="text-right">Művelet</div>
           </div>
-        )}
 
-        {vehicles.map((vehicle) => {
-          const form = editForms[vehicle.id] ?? {
-            vehicle_type: vehicle.vehicle_type ?? "",
-            game_vehicle_id: vehicle.game_vehicle_id ?? "",
-            plate: vehicle.plate ?? "",
-            notes: vehicle.notes ?? "",
-            allowed_rank_ids: Array.isArray(vehicle.allowed_rank_ids) ? vehicle.allowed_rank_ids : [],
-            registration_valid_until: toDateInputValue(vehicle.registration_valid_until),
-            registration_imgur_url: vehicle.registration_imgur_url ?? "",
-          };
+          {vehicles.length === 0 && (
+            <div className="px-4 py-6 text-sm text-white/70">
+              Még nincs felvéve egyetlen jármű sem.
+            </div>
+          )}
 
-          const currentRevocation = getCurrentVehicleRevocation(vehicle.id);
-          const vehicleRevocations = getVehicleRevocations(vehicle.id);
-          const vehicleWarnings = getVehicleWarnings(vehicle.id);
-          const isExpanded = expandedVehicleId === vehicle.id;
-          const isVehicleBusy = savingVehicleId === vehicle.id || deletingVehicleId === vehicle.id;
+          {vehicles.map((vehicle) => {
+            const form = editForms[vehicle.id] ?? {
+              vehicle_type: vehicle.vehicle_type ?? "",
+              game_vehicle_id: vehicle.game_vehicle_id ?? "",
+              plate: vehicle.plate ?? "",
+              notes: vehicle.notes ?? "",
+              allowed_rank_ids: Array.isArray(vehicle.allowed_rank_ids) ? vehicle.allowed_rank_ids : [],
+              registration_valid_until: toDateInputValue(vehicle.registration_valid_until),
+              registration_imgur_url: vehicle.registration_imgur_url ?? "",
+            };
 
-          return (
-            <div key={vehicle.id} className="border-b border-white/10 last:border-b-0">
-              <div className="grid gap-4 px-4 py-4 lg:grid-cols-[220px_110px_130px_minmax(480px,1fr)_150px] lg:items-start">
-                <div>
-                  <div className="text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
-                    Autó típusa
-                  </div>
-                  <div className="font-semibold text-lg lg:text-base">{vehicle.vehicle_type}</div>
-                  {vehicle.notes && (
-                    <div className="mt-1 text-xs text-white/55">{vehicle.notes}</div>
-                  )}
-                </div>
+            const currentRevocation = getCurrentVehicleRevocation(vehicle.id);
+            const vehicleRevocations = getVehicleRevocations(vehicle.id);
+            const vehicleWarnings = getVehicleWarnings(vehicle.id);
+            const isExpanded = expandedVehicleId === vehicle.id;
+            const isVehicleBusy = savingVehicleId === vehicle.id || deletingVehicleId === vehicle.id;
 
-                <div className="text-sm text-white/80">
-                  <div className="text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
-                    ID
-                  </div>
-                  {vehicle.game_vehicle_id || "—"}
-                </div>
-
-                <div className="text-sm text-white/80">
-                  <div className="text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
-                    Rendszám
-                  </div>
-                  {vehicle.plate || "—"}
-                </div>
-
-                <div className="min-w-0 space-y-3">
+            return (
+              <div key={vehicle.id} className="border-t border-white/10">
+                <div
+                  className={`grid gap-4 px-4 py-5 transition lg:grid-cols-[220px_110px_130px_minmax(480px,1fr)_150px] lg:items-start ${
+                    isExpanded ? "bg-white/[0.03]" : "hover:bg-white/[0.02]"
+                  } cursor-pointer`}
+                  onClick={() =>
+                    setExpandedVehicleId((prev) => (prev === vehicle.id ? null : vehicle.id))
+                  }
+                >
                   <div>
-                    <div className="mb-2 text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
-                      Jogosult rangok / forgalmi / figyelmeztetések
+                    <div className="text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
+                      Autó típusa
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {getAllowedRankItems(vehicle).map((item, index) =>
-                        item.name === "Minden tag használhatja" ? (
-                          <span
-                            key={`${vehicle.id}-rank-${index}`}
-                            className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/75"
-                          >
-                            {item.name}
-                          </span>
-                        ) : (
-                          <div key={`${vehicle.id}-rank-${index}`} className="flex items-center gap-2">
-                            <RankBadge name={item.name} />
-                            {item.archived ? <span className="text-xs text-white/45">(archivált)</span> : null}
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="w-full rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-white/60">
-                      Forgalmi érvényessége
-                    </div>
-                    <div className="mt-2 text-sm text-white/85">
-                      {formatDate(vehicle.registration_valid_until)}
-                    </div>
-
-                    {vehicle.registration_imgur_url ? (
-                      <a
-                        href={vehicle.registration_imgur_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 inline-flex text-xs text-red-300 hover:text-red-200 underline underline-offset-2"
-                      >
-                        Forgalmi link megnyitása
-                      </a>
-                    ) : (
-                      <div className="mt-2 text-xs text-white/50">Nincs link megadva</div>
+                    <div className="font-semibold text-lg lg:text-base">{vehicle.vehicle_type}</div>
+                    {vehicle.notes && (
+                      <div className="mt-1 text-xs text-white/55">{vehicle.notes}</div>
                     )}
                   </div>
 
-                  <div className="w-full rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
-                    <div className="border-b border-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white/60">
-                      Jármű figyelmeztetések
+                  <div className="text-sm text-white/80">
+                    <div className="text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
+                      ID
                     </div>
+                    {vehicle.game_vehicle_id || "—"}
+                  </div>
 
-                    {vehicleWarnings.length === 0 ? (
-                      <div className="px-3 py-3 text-sm text-white/60">
-                        Ehhez a járműhöz nincs figyelmeztetés.
+                  <div className="text-sm text-white/80">
+                    <div className="text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
+                      Rendszám
+                    </div>
+                    {vehicle.plate || "—"}
+                  </div>
+
+                  <div className="min-w-0 space-y-4">
+                    <div>
+                      <div className="mb-2 text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
+                        Jogosult rangok / forgalmi / figyelmeztetések
                       </div>
-                    ) : (
-                      <div className="overflow-hidden">
-                        <div className="grid grid-cols-[130px_1fr] border-b border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white/60">
-                          <div>Dátum</div>
-                          <div>Ok</div>
-                        </div>
-                        {vehicleWarnings.slice(0, 3).map((item) => (
-                          <div
-                            key={item.id}
-                            className="grid grid-cols-[130px_1fr] border-b border-white/5 px-3 py-2 text-sm last:border-b-0"
-                          >
-                            <div className="text-white/75">{formatDate(item.created_at)}</div>
-                            <div className="break-words text-white/85">{item.reason || "—"}</div>
-                          </div>
-                        ))}
-                        {vehicleWarnings.length > 3 && (
-                          <div className="px-3 py-2 text-xs text-white/50">
-                            +{vehicleWarnings.length - 3} további figyelmeztetés a részletekben
-                          </div>
+                      <div className="flex flex-wrap gap-2">
+                        {getAllowedRankItems(vehicle).map((item, index) =>
+                          item.name === "Minden tag használhatja" ? (
+                            <span
+                              key={`${vehicle.id}-rank-${index}`}
+                              className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/75"
+                            >
+                              {item.name}
+                            </span>
+                          ) : (
+                            <div key={`${vehicle.id}-rank-${index}`} className="flex items-center gap-2">
+                              <RankBadge name={item.name} />
+                              {item.archived ? <span className="text-xs text-white/45">(archivált)</span> : null}
+                            </div>
+                          )
                         )}
                       </div>
+                    </div>
+
+                    <div className="space-y-2 text-sm">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                        Forgalmi érvényessége
+                      </div>
+                      <div className="text-white/85">
+                        {formatDate(vehicle.registration_valid_until)}
+                      </div>
+
+                      {vehicle.registration_imgur_url ? (
+                        <a
+                          href={vehicle.registration_imgur_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex text-xs text-red-300 underline underline-offset-2 hover:text-red-200"
+                        >
+                          Forgalmi link megnyitása
+                        </a>
+                      ) : (
+                        <div className="text-xs text-white/50">Nincs link megadva</div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                        Jármű figyelmeztetések
+                      </div>
+
+                      {vehicleWarnings.length === 0 ? (
+                        <div className="text-sm text-white/60">
+                          Ehhez a járműhöz nincs figyelmeztetés.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {vehicleWarnings.slice(0, 3).map((item) => (
+                            <div key={item.id} className="flex flex-col gap-1 text-sm">
+                              <div className="text-white/75">{formatDate(item.created_at)}</div>
+                              <div className="break-words text-white/85">{item.reason || "—"}</div>
+                            </div>
+                          ))}
+                          {vehicleWarnings.length > 3 && (
+                            <div className="text-xs text-white/50">
+                              +{vehicleWarnings.length - 3} további figyelmeztetés a részletekben
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {currentRevocation ? (
+                      <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-200">
+                        Járműjog elvéve eddig: {formatDate(currentRevocation.revoked_until)}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2 text-xs text-emerald-200">
+                        Nincs aktív jogelvétel ennél a járműnél.
+                      </div>
                     )}
                   </div>
 
-                  {currentRevocation ? (
-                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-200">
-                      Járműjog elvéve eddig: {formatDate(currentRevocation.revoked_until)}
+                  <div className="flex flex-col items-stretch gap-2 lg:items-end">
+                    <div className="text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
+                      Művelet
                     </div>
-                  ) : (
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2 text-xs text-emerald-200">
-                      Nincs aktív jogelvétel ennél a járműnél.
-                    </div>
-                  )}
-                </div>
 
-                <div className="flex flex-col items-stretch gap-2 lg:items-end">
-                  <div className="text-[11px] uppercase tracking-wide text-white/45 lg:hidden">
-                    Művelet
+                    <div className="text-xs text-white/50">
+                      {isExpanded ? "Bezárás" : "Megnyitás"}
+                    </div>
+
+                    {canEdit && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteVehicle(vehicle.id);
+                        }}
+                        disabled={isVehicleBusy}
+                        className="lmr-btn lmr-btn-danger rounded-xl px-3 py-2 text-sm disabled:opacity-50"
+                      >
+                        Törlés
+                      </button>
+                    )}
                   </div>
-                  <button
-                    onClick={() =>
-                      setExpandedVehicleId((prev) => (prev === vehicle.id ? null : vehicle.id))
-                    }
-                    className="rounded-xl border border-white/15 px-3 py-2 text-sm hover:bg-white/5"
-                  >
-                    {isExpanded ? "Bezárás" : "Részletek"}
-                  </button>
-
-                  {canEdit && (
-                    <button
-                      onClick={() => deleteVehicle(vehicle.id)}
-                      disabled={isVehicleBusy}
-                      className="rounded-xl border border-red-500/30 px-3 py-2 text-sm hover:bg-red-500/10 disabled:opacity-50"
-                    >
-                      Törlés
-                    </button>
-                  )}
                 </div>
-              </div>
 
-              {isExpanded && (
-                <div className="border-t border-white/10 bg-black/20 px-4 py-5">
-                  {canEdit ? (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-lg font-semibold">Jármű szerkesztése</h3>
-
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {isExpanded && (
+                  <div className="border-t border-white/10 px-4 py-6">
+                    {canEdit ? (
+                      <div className="space-y-8">
+                        <section className="space-y-5">
                           <div>
-                            <label className="mb-2 block text-sm text-white/75">Autó típusa</label>
-                            <input
-                              value={form.vehicle_type}
-                              onChange={(e) =>
-                                updateEditVehicleForm(vehicle.id, { vehicle_type: e.target.value })
-                              }
-                              className="w-full rounded-2xl border px-3.5 py-3"
-                            />
+                            <h3 className="text-lg font-semibold text-white">Jármű szerkesztése</h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <label className="mb-2 block text-sm text-white/75">Autó típusa</label>
+                              <input
+                                value={form.vehicle_type}
+                                onChange={(e) =>
+                                  updateEditVehicleForm(vehicle.id, { vehicle_type: e.target.value })
+                                }
+                                className="w-full rounded-2xl border px-3.5 py-3"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-2 block text-sm text-white/75">Játékbeli ID</label>
+                              <input
+                                value={form.game_vehicle_id}
+                                onChange={(e) =>
+                                  updateEditVehicleForm(vehicle.id, { game_vehicle_id: e.target.value })
+                                }
+                                className="w-full rounded-2xl border px-3.5 py-3"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-2 block text-sm text-white/75">Rendszám</label>
+                              <input
+                                value={form.plate}
+                                onChange={(e) =>
+                                  updateEditVehicleForm(vehicle.id, { plate: e.target.value })
+                                }
+                                className="w-full rounded-2xl border px-3.5 py-3"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-2 block text-sm text-white/75">Megjegyzés</label>
+                              <input
+                                value={form.notes}
+                                onChange={(e) =>
+                                  updateEditVehicleForm(vehicle.id, { notes: e.target.value })
+                                }
+                                className="w-full rounded-2xl border px-3.5 py-3"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-2 block text-sm text-white/75">Forgalmi érvényessége</label>
+                              <input
+                                type="date"
+                                value={form.registration_valid_until}
+                                onChange={(e) =>
+                                  updateEditVehicleForm(vehicle.id, {
+                                    registration_valid_until: e.target.value,
+                                  })
+                                }
+                                className="w-full rounded-2xl border px-3.5 py-3"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-2 block text-sm text-white/75">Forgalmi Imgur link</label>
+                              <input
+                                value={form.registration_imgur_url}
+                                onChange={(e) =>
+                                  updateEditVehicleForm(vehicle.id, {
+                                    registration_imgur_url: e.target.value,
+                                  })
+                                }
+                                className="w-full rounded-2xl border px-3.5 py-3"
+                              />
+                            </div>
                           </div>
 
                           <div>
-                            <label className="mb-2 block text-sm text-white/75">Játékbeli ID</label>
-                            <input
-                              value={form.game_vehicle_id}
-                              onChange={(e) =>
-                                updateEditVehicleForm(vehicle.id, { game_vehicle_id: e.target.value })
-                              }
-                              className="w-full rounded-2xl border px-3.5 py-3"
-                            />
+                            <div className="mb-2 block text-sm text-white/75">Használható rangok</div>
+
+                            <div className="grid gap-2 md:grid-cols-3">
+                              {activeRanks.map((rank) => {
+                                const checked = form.allowed_rank_ids.includes(rank.id);
+
+                                return (
+                                  <label
+                                    key={`${vehicle.id}-${rank.id}`}
+                                    className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleVehicleRank(vehicle.id, rank.id)}
+                                    />
+                                    <RankBadge name={rank.name} />
+                                  </label>
+                                );
+                              })}
+                            </div>
                           </div>
 
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => saveVehicle(vehicle.id)}
+                              disabled={isVehicleBusy}
+                              className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm disabled:opacity-50"
+                            >
+                              {savingVehicleId === vehicle.id ? "Mentés..." : "Jármű mentése"}
+                            </button>
+
+                            <div className="self-center text-xs text-white/50">
+                              Utolsó módosítás: {formatDateTime(vehicle.updated_at)}
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="space-y-5">
                           <div>
-                            <label className="mb-2 block text-sm text-white/75">Rendszám</label>
-                            <input
-                              value={form.plate}
-                              onChange={(e) =>
-                                updateEditVehicleForm(vehicle.id, { plate: e.target.value })
-                              }
-                              className="w-full rounded-2xl border px-3.5 py-3"
-                            />
+                            <h3 className="text-lg font-semibold text-white">Jármű jogelvétel</h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                            <p className="mt-4 text-sm text-white/70">
+                              Itt tudod rögzíteni, ha az adott jármű jogosultsága egy ideig el van véve.
+                              Ez nem személyhez kötött, hanem magára a járműre vonatkozik.
+                            </p>
                           </div>
 
-                          <div>
-                            <label className="mb-2 block text-sm text-white/75">Megjegyzés</label>
-                            <input
-                              value={form.notes}
-                              onChange={(e) =>
-                                updateEditVehicleForm(vehicle.id, { notes: e.target.value })
-                              }
-                              className="w-full rounded-2xl border px-3.5 py-3"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="mb-2 block text-sm text-white/75">Forgalmi érvényessége</label>
-                            <input
-                              type="date"
-                              value={form.registration_valid_until}
-                              onChange={(e) =>
-                                updateEditVehicleForm(vehicle.id, {
-                                  registration_valid_until: e.target.value,
-                                })
-                              }
-                              className="w-full rounded-2xl border px-3.5 py-3"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="mb-2 block text-sm text-white/75">Forgalmi Imgur link</label>
-                            <input
-                              value={form.registration_imgur_url}
-                              onChange={(e) =>
-                                updateEditVehicleForm(vehicle.id, {
-                                  registration_imgur_url: e.target.value,
-                                })
-                              }
-                              className="w-full rounded-2xl border px-3.5 py-3"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="mt-5">
-                          <div className="mb-2 block text-sm text-white/75">Használható rangok</div>
-                          <p className="mb-3 text-xs text-white/55">
-                            Archivált rang nem választható újonnan, de ha korábban hozzá volt rendelve,
-                            a megjelenítésben továbbra is látszani fog.
-                          </p>
-
-                          <div className="grid gap-2 md:grid-cols-3">
-                            {activeRanks.map((rank) => {
-                              const checked = form.allowed_rank_ids.includes(rank.id);
-
-                              return (
-                                <label
-                                  key={`${vehicle.id}-${rank.id}`}
-                                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => toggleVehicleRank(vehicle.id, rank.id)}
-                                  />
-                                  <RankBadge name={rank.name} />
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="mt-5 flex gap-3">
-                          <button
-                            onClick={() => saveVehicle(vehicle.id)}
-                            disabled={isVehicleBusy}
-                            className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-50"
-                          >
-                            {savingVehicleId === vehicle.id ? "Mentés..." : "Jármű mentése"}
-                          </button>
-
-                          <div className="self-center text-xs text-white/50">
-                            Utolsó módosítás: {formatDateTime(vehicle.updated_at)}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="h-px bg-white/10" />
-
-                      <div>
-                        <h3 className="text-lg font-semibold">Jármű jogelvétel</h3>
-                        <p className="mt-2 text-sm text-white/70">
-                          Itt tudod rögzíteni, ha az adott jármű jogosultsága egy ideig el van véve.
-                          Ez nem személyhez kötött, hanem magára a járműre vonatkozik.
-                        </p>
-
-                        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                           {currentRevocation ? (
                             <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">
                               Ehhez a járműhöz jelenleg aktív jogelvétel tartozik. Új jogelvételt csak
@@ -1287,11 +1324,11 @@ export default function JarmuvekPage() {
                                 </div>
                               </div>
 
-                              <div className="mt-4">
+                              <div>
                                 <button
                                   onClick={() => createRevocation(vehicle.id)}
                                   disabled={creatingRevocationForVehicleId === vehicle.id}
-                                  className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-50"
+                                  className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm disabled:opacity-50"
                                 >
                                   {creatingRevocationForVehicleId === vehicle.id
                                     ? "Mentés..."
@@ -1300,125 +1337,118 @@ export default function JarmuvekPage() {
                               </div>
                             </>
                           )}
-                        </div>
 
-                        <div className="mt-4 space-y-3">
-                          {vehicleRevocations.length === 0 && (
-                            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-white/65">
-                              Ehhez a járműhöz még nincs jogelvételi bejegyzés.
-                            </div>
-                          )}
-
-                          {vehicleRevocations.map((item) => {
-                            const revocationForm = editRevocationForms[item.id] ?? {
-                              revoked_until: toDateInputValue(item.revoked_until),
-                              note: item.note ?? "",
-                            };
-                            const isExpired = new Date(item.revoked_until).getTime() < Date.now();
-                            const isBusy =
-                              savingRevocationId === item.id || deletingRevocationId === item.id;
-
-                            return (
-                              <div
-                                key={item.id}
-                                className="rounded-2xl border border-white/10 bg-white/[0.02] p-4"
-                              >
-                                <div className="flex flex-wrap items-center gap-3">
-                                  <div className="font-semibold">Járműjog elvétel</div>
-
-                                  <span
-                                    className={`rounded-full px-2 py-1 text-xs ${
-                                      isExpired
-                                        ? "border border-white/10 bg-white/5 text-white/60"
-                                        : "border border-red-500/20 bg-red-500/10 text-red-200"
-                                    }`}
-                                  >
-                                    {isExpired ? "Lejárt" : "Aktív"}
-                                  </span>
-                                </div>
-
-                                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                  <div>
-                                    <label className="mb-2 block text-sm text-white/75">
-                                      Elvéve eddig
-                                    </label>
-                                    <input
-                                      type="date"
-                                      value={revocationForm.revoked_until}
-                                      onChange={(e) =>
-                                        setEditRevocationForms((prev) => ({
-                                          ...prev,
-                                          [item.id]: {
-                                            ...prev[item.id],
-                                            revoked_until: e.target.value,
-                                          },
-                                        }))
-                                      }
-                                      className="w-full rounded-2xl border px-3.5 py-3"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="mb-2 block text-sm text-white/75">
-                                      Megjegyzés
-                                    </label>
-                                    <input
-                                      value={revocationForm.note}
-                                      onChange={(e) =>
-                                        setEditRevocationForms((prev) => ({
-                                          ...prev,
-                                          [item.id]: {
-                                            ...prev[item.id],
-                                            note: e.target.value,
-                                          },
-                                        }))
-                                      }
-                                      className="w-full rounded-2xl border px-3.5 py-3"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div className="mt-3 text-xs text-white/50">
-                                  Létrehozva: {formatDateTime(item.created_at)}
-                                </div>
-
-                                <div className="mt-4 flex gap-3">
-                                  <button
-                                    onClick={() => saveRevocation(item.id)}
-                                    disabled={isBusy}
-                                    className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-50"
-                                  >
-                                    {savingRevocationId === item.id
-                                      ? "Mentés..."
-                                      : "Bejegyzés mentése"}
-                                  </button>
-
-                                  <button
-                                    onClick={() => deleteRevocation(item.id)}
-                                    disabled={isBusy}
-                                    className="rounded-xl border border-red-500/30 px-4 py-2 text-sm hover:bg-red-500/10 disabled:opacity-50"
-                                  >
-                                    Törlés
-                                  </button>
-                                </div>
+                          <div className="space-y-4">
+                            {vehicleRevocations.length === 0 && (
+                              <div className="text-sm text-white/65">
+                                Ehhez a járműhöz még nincs jogelvételi bejegyzés.
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                            )}
 
-                      <div className="h-px bg-white/10" />
+                            {vehicleRevocations.map((item) => {
+                              const revocationForm = editRevocationForms[item.id] ?? {
+                                revoked_until: toDateInputValue(item.revoked_until),
+                                note: item.note ?? "",
+                              };
+                              const isExpired = new Date(item.revoked_until).getTime() < Date.now();
+                              const isBusy =
+                                savingRevocationId === item.id || deletingRevocationId === item.id;
 
-                      <div>
-                        <h3 className="text-lg font-semibold">Jármű figyelmeztetések</h3>
-                        <p className="mt-2 text-sm text-white/70">
-                          Itt tudsz figyelmeztetést rögzíteni az adott járműre.
-                        </p>
+                              return (
+                                <div key={item.id} className="border-t border-white/10 pt-4">
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <div className="font-semibold">Járműjog elvétel</div>
 
-                        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                          <label className="mb-2 block text-sm text-white/75">
-                            Figyelmeztetés oka
-                          </label>
+                                    <span
+                                      className={`rounded-full px-2 py-1 text-xs ${
+                                        isExpired
+                                          ? "border border-white/10 bg-white/5 text-white/60"
+                                          : "border border-red-500/20 bg-red-500/10 text-red-200"
+                                      }`}
+                                    >
+                                      {isExpired ? "Lejárt" : "Aktív"}
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <div>
+                                      <label className="mb-2 block text-sm text-white/75">
+                                        Elvéve eddig
+                                      </label>
+                                      <input
+                                        type="date"
+                                        value={revocationForm.revoked_until}
+                                        onChange={(e) =>
+                                          setEditRevocationForms((prev) => ({
+                                            ...prev,
+                                            [item.id]: {
+                                              ...prev[item.id],
+                                              revoked_until: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        className="w-full rounded-2xl border px-3.5 py-3"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <label className="mb-2 block text-sm text-white/75">
+                                        Megjegyzés
+                                      </label>
+                                      <input
+                                        value={revocationForm.note}
+                                        onChange={(e) =>
+                                          setEditRevocationForms((prev) => ({
+                                            ...prev,
+                                            [item.id]: {
+                                              ...prev[item.id],
+                                              note: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        className="w-full rounded-2xl border px-3.5 py-3"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3 text-xs text-white/50">
+                                    Létrehozva: {formatDateTime(item.created_at)}
+                                  </div>
+
+                                  <div className="mt-4 flex gap-3">
+                                    <button
+                                      onClick={() => saveRevocation(item.id)}
+                                      disabled={isBusy}
+                                      className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm disabled:opacity-50"
+                                    >
+                                      {savingRevocationId === item.id
+                                        ? "Mentés..."
+                                        : "Bejegyzés mentése"}
+                                    </button>
+
+                                    <button
+                                      onClick={() => deleteRevocation(item.id)}
+                                      disabled={isBusy}
+                                      className="lmr-btn lmr-btn-danger rounded-xl px-4 py-2 text-sm disabled:opacity-50"
+                                    >
+                                      Törlés
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </section>
+
+                        <section className="space-y-5">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">Jármű figyelmeztetések</h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                            <p className="mt-4 text-sm text-white/70">
+                              Itt tudsz figyelmeztetést rögzíteni az adott járműre.
+                            </p>
+                          </div>
+
                           <div className="flex flex-col gap-3 md:flex-row">
                             <input
                               value={newWarningReasons[vehicle.id] ?? ""}
@@ -1434,208 +1464,224 @@ export default function JarmuvekPage() {
                             <button
                               onClick={() => createWarning(vehicle.id)}
                               disabled={creatingWarningVehicleId === vehicle.id}
-                              className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-50"
+                              className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm disabled:opacity-50"
                             >
                               {creatingWarningVehicleId === vehicle.id
                                 ? "Mentés..."
                                 : "Figyelmeztetés hozzáadása"}
                             </button>
                           </div>
-                        </div>
 
-                        <div className="mt-4 space-y-3">
-                          {vehicleWarnings.length === 0 && (
-                            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-white/65">
-                              Ehhez a járműhöz még nincs figyelmeztetés.
-                            </div>
-                          )}
-
-                          {vehicleWarnings.map((item) => (
-                            <div
-                              key={item.id}
-                              className="rounded-2xl border border-white/10 bg-white/[0.02] p-4"
-                            >
-                              <div className="text-sm text-white/85">{item.reason || "—"}</div>
-                              <div className="mt-2 text-xs text-white/50">
-                                Létrehozva: {formatDateTime(item.created_at)}
+                          <div className="space-y-4">
+                            {vehicleWarnings.length === 0 && (
+                              <div className="text-sm text-white/65">
+                                Ehhez a járműhöz még nincs figyelmeztetés.
                               </div>
-                              <div className="mt-4">
-                                <button
-                                  onClick={() => deleteWarning(item.id)}
-                                  disabled={deletingWarningId === item.id}
-                                  className="rounded-xl border border-red-500/30 px-4 py-2 text-sm hover:bg-red-500/10 disabled:opacity-50"
-                                >
-                                  Törlés
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold">Jármű részletei</h3>
+                            )}
 
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                          <div className="text-sm text-white/60">Autó típusa</div>
-                          <div className="mt-1 font-semibold">{vehicle.vehicle_type}</div>
-                        </div>
-
-                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                          <div className="text-sm text-white/60">Játékbeli ID</div>
-                          <div className="mt-1 font-semibold">
-                            {vehicle.game_vehicle_id || "—"}
-                          </div>
-                        </div>
-
-                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                          <div className="text-sm text-white/60">Rendszám</div>
-                          <div className="mt-1 font-semibold">{vehicle.plate || "—"}</div>
-                        </div>
-
-                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                          <div className="text-sm text-white/60">Jogállapot</div>
-                          <div className="mt-1 font-semibold">
-                            {currentRevocation
-                              ? `Elvéve eddig: ${formatDate(currentRevocation.revoked_until)}`
-                              : "Nincs aktív jogelvétel"}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                        <div className="text-sm text-white/60">Forgalmi érvényessége</div>
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
-                          <div>
-                            <label className="mb-2 block text-sm text-white/75">Érvényes eddig</label>
-                            <input
-                              type="date"
-                              value={registrationForms[vehicle.id]?.registration_valid_until ?? ""}
-                              onChange={(e) =>
-                                setRegistrationForms((prev) => ({
-                                  ...prev,
-                                  [vehicle.id]: {
-                                    ...(prev[vehicle.id] ?? {
-                                      registration_valid_until: "",
-                                      registration_imgur_url: "",
-                                    }),
-                                    registration_valid_until: e.target.value,
-                                  },
-                                }))
-                              }
-                              className="w-full rounded-2xl border px-3.5 py-3"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="mb-2 block text-sm text-white/75">
-                              Forgalmi Imgur link
-                            </label>
-                            <input
-                              value={registrationForms[vehicle.id]?.registration_imgur_url ?? ""}
-                              onChange={(e) =>
-                                setRegistrationForms((prev) => ({
-                                  ...prev,
-                                  [vehicle.id]: {
-                                    ...(prev[vehicle.id] ?? {
-                                      registration_valid_until: "",
-                                      registration_imgur_url: "",
-                                    }),
-                                    registration_imgur_url: e.target.value,
-                                  },
-                                }))
-                              }
-                              className="w-full rounded-2xl border px-3.5 py-3"
-                              placeholder="https://imgur.com/..."
-                            />
-                          </div>
-                        </div>
-
-                        <div className="mt-4 flex flex-wrap gap-3">
-                          <button
-                            onClick={() => saveRegistration(vehicle.id)}
-                            disabled={
-                              !canEditRegistration || savingRegistrationVehicleId === vehicle.id
-                            }
-                            className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08] disabled:opacity-50"
-                          >
-                            {savingRegistrationVehicleId === vehicle.id
-                              ? "Mentés..."
-                              : "Forgalmi mentése"}
-                          </button>
-
-                          {vehicle.registration_imgur_url ? (
-                            <a
-                              href={vehicle.registration_imgur_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-2xl border border-white/12 bg-white/[0.05] px-4 py-2.5 text-sm hover:bg-white/[0.08]"
-                            >
-                              Imgur link megnyitása
-                            </a>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                        <div className="text-sm text-white/60">Használható rangok</div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {getAllowedRankItems(vehicle).map((item, index) =>
-                            item.name === "Minden tag használhatja" ? (
-                              <span
-                                key={`${vehicle.id}-member-rank-${index}`}
-                                className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/75"
-                              >
-                                {item.name}
-                              </span>
-                            ) : (
-                              <div key={`${vehicle.id}-member-rank-${index}`} className="flex items-center gap-2">
-                                <RankBadge name={item.name} />
-                                {item.archived ? <span className="text-xs text-white/45">(archivált)</span> : null}
-                              </div>
-                            )
-                          )}
-                        </div>
-                      </div>
-
-                      {currentRevocation && currentRevocation.note && (
-                        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                          <div className="text-sm text-white/60">Megjegyzés</div>
-                          <div className="mt-1 text-sm text-white/80">{currentRevocation.note}</div>
-                        </div>
-                      )}
-
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                        <div className="text-sm text-white/60">Jármű figyelmeztetések</div>
-                        <div className="mt-3 space-y-3">
-                          {vehicleWarnings.length === 0 ? (
-                            <div className="text-sm text-white/65">
-                              Ehhez a járműhöz még nincs figyelmeztetés.
-                            </div>
-                          ) : (
-                            vehicleWarnings.map((item) => (
-                              <div
-                                key={item.id}
-                                className="rounded-xl border border-white/10 bg-black/20 p-3"
-                              >
+                            {vehicleWarnings.map((item) => (
+                              <div key={item.id} className="border-t border-white/10 pt-4">
                                 <div className="text-sm text-white/85">{item.reason || "—"}</div>
                                 <div className="mt-2 text-xs text-white/50">
                                   Létrehozva: {formatDateTime(item.created_at)}
                                 </div>
+                                <div className="mt-4">
+                                  <button
+                                    onClick={() => deleteWarning(item.id)}
+                                    disabled={deletingWarningId === item.id}
+                                    className="lmr-btn lmr-btn-danger rounded-xl px-4 py-2 text-sm disabled:opacity-50"
+                                  >
+                                    Törlés
+                                  </button>
+                                </div>
                               </div>
-                            ))
-                          )}
-                        </div>
+                            ))}
+                          </div>
+                        </section>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                    ) : (
+                      <div className="space-y-8">
+                        <section className="space-y-5">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">Jármű részletei</h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                          </div>
+
+                          <div className="grid gap-y-8 gap-x-10 md:grid-cols-2">
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.12em] text-white/45">Autó típusa</div>
+                              <div className="mt-3 text-lg font-semibold text-white">{vehicle.vehicle_type}</div>
+                            </div>
+
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.12em] text-white/45">Játékbeli ID</div>
+                              <div className="mt-3 text-lg font-semibold text-white">{vehicle.game_vehicle_id || "—"}</div>
+                            </div>
+
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.12em] text-white/45">Rendszám</div>
+                              <div className="mt-3 text-lg font-semibold text-white">{vehicle.plate || "—"}</div>
+                            </div>
+
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.12em] text-white/45">Jogállapot</div>
+                              <div className="mt-3 text-lg font-semibold text-white">
+                                {currentRevocation
+                                  ? `Elvéve eddig: ${formatDate(currentRevocation.revoked_until)}`
+                                  : "Nincs aktív jogelvétel"}
+                              </div>
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="space-y-5">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">Forgalmi</h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <label className="mb-2 block text-sm text-white/75">Érvényes eddig</label>
+                              <input
+                                type="date"
+                                value={registrationForms[vehicle.id]?.registration_valid_until ?? ""}
+                                onChange={(e) =>
+                                  setRegistrationForms((prev) => ({
+                                    ...prev,
+                                    [vehicle.id]: {
+                                      ...(prev[vehicle.id] ?? {
+                                        registration_valid_until: "",
+                                        registration_imgur_url: "",
+                                      }),
+                                      registration_valid_until: e.target.value,
+                                    },
+                                  }))
+                                }
+                                className="w-full rounded-2xl border px-3.5 py-3"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-2 block text-sm text-white/75">
+                                Forgalmi Imgur link
+                              </label>
+                              <input
+                                value={registrationForms[vehicle.id]?.registration_imgur_url ?? ""}
+                                onChange={(e) =>
+                                  setRegistrationForms((prev) => ({
+                                    ...prev,
+                                    [vehicle.id]: {
+                                      ...(prev[vehicle.id] ?? {
+                                        registration_valid_until: "",
+                                        registration_imgur_url: "",
+                                      }),
+                                      registration_imgur_url: e.target.value,
+                                    },
+                                  }))
+                                }
+                                className="w-full rounded-2xl border px-3.5 py-3"
+                                placeholder="https://imgur.com/..."
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              onClick={() => saveRegistration(vehicle.id)}
+                              disabled={
+                                !canEditRegistration || savingRegistrationVehicleId === vehicle.id
+                              }
+                              className="lmr-btn lmr-btn-primary rounded-2xl px-4 py-2.5 text-sm disabled:opacity-50"
+                            >
+                              {savingRegistrationVehicleId === vehicle.id
+                                ? "Mentés..."
+                                : "Forgalmi mentése"}
+                            </button>
+
+                            {vehicle.registration_imgur_url ? (
+                              <a
+                                href={vehicle.registration_imgur_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="lmr-btn rounded-2xl px-4 py-2.5 text-sm"
+                              >
+                                Imgur link megnyitása
+                              </a>
+                            ) : null}
+                          </div>
+                        </section>
+
+                        <section className="space-y-5">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">Használható rangok</h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {getAllowedRankItems(vehicle).map((item, index) =>
+                              item.name === "Minden tag használhatja" ? (
+                                <span
+                                  key={`${vehicle.id}-member-rank-${index}`}
+                                  className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/75"
+                                >
+                                  {item.name}
+                                </span>
+                              ) : (
+                                <div key={`${vehicle.id}-member-rank-${index}`} className="flex items-center gap-2">
+                                  <RankBadge name={item.name} />
+                                  {item.archived ? <span className="text-xs text-white/45">(archivált)</span> : null}
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </section>
+
+                        {currentRevocation && currentRevocation.note && (
+                          <section className="space-y-5">
+                            <div>
+                              <h3 className="text-lg font-semibold text-white">Megjegyzés</h3>
+                              <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                            </div>
+
+                            <div className="text-sm text-white/80">{currentRevocation.note}</div>
+                          </section>
+                        )}
+
+                        <section className="space-y-5">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">Jármű figyelmeztetések</h3>
+                            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                          </div>
+
+                          <div className="space-y-3">
+                            {vehicleWarnings.length === 0 ? (
+                              <div className="text-sm text-white/65">
+                                Ehhez a járműhöz még nincs figyelmeztetés.
+                              </div>
+                            ) : (
+                              vehicleWarnings.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="border-t border-white/10 pt-4"
+                                >
+                                  <div className="text-sm text-white/85">{item.reason || "—"}</div>
+                                  <div className="mt-2 text-xs text-white/50">
+                                    Létrehozva: {formatDateTime(item.created_at)}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </section>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </section>
     </div>
   );

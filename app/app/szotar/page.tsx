@@ -21,7 +21,11 @@ export default function SzotarPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-1/2" />
+                <col className="w-1/2" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
@@ -58,7 +62,11 @@ export default function SzotarPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-1/2" />
+                <col className="w-1/2" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
@@ -104,7 +112,11 @@ export default function SzotarPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-1/2" />
+                <col className="w-1/2" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
@@ -166,7 +178,11 @@ export default function SzotarPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-1/2" />
+                <col className="w-1/2" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
@@ -210,7 +226,11 @@ export default function SzotarPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-1/2" />
+                <col className="w-1/2" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
@@ -251,7 +271,11 @@ export default function SzotarPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-1/2" />
+                <col className="w-1/2" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
@@ -290,7 +314,11 @@ export default function SzotarPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-1/2" />
+                <col className="w-1/2" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-white/55">

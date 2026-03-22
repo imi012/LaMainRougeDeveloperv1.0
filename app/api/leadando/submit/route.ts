@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAppUser } from "@/lib/server/app-auth";
+import { checkFormSpamProtection } from "@/lib/server/form-spam-protection";
 
 export async function POST(req: Request) {
   const auth = await requireAppUser(req, {
@@ -24,6 +25,22 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient();
+
+  const spamMessage = await checkFormSpamProtection({
+    admin,
+    table: "leadando_submissions",
+    userId: auth.userId,
+    timeColumn: "submitted_at",
+    fingerprint: {
+      imgur_url,
+      weeks,
+    },
+    selectColumns: ["imgur_url", "weeks"],
+  });
+
+  if (spamMessage) {
+    return NextResponse.json({ ok: false, message: spamMessage }, { status: 429 });
+  }
 
   const { data, error } = await admin
     .from("leadando_submissions")

@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   try {
     const admin = createAdminClient();
 
-    const [leadandoRes, ticketRes, serviceRes, loreRes] = await Promise.all([
+    const [leadandoRes, ticketRes, serviceRes, loreRes, parkingRes] = await Promise.all([
       admin
         .from("leadando_submissions")
         .select("id,user_id,imgur_url,weeks,submitted_at,is_approved,approved_at,approved_by")
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
         .select(
           "id,user_id,type,status,title,description,created_at,updated_at,sanction_reason,inactivity_from,inactivity_to,old_name,new_name,namechange_reason"
         )
-        .neq("status", "closed")
+        .in("status", ["pending", "open", "in_progress"])
         .order("created_at", { ascending: false })
         .limit(500),
       admin
@@ -50,6 +50,12 @@ export async function GET(req: Request) {
         .select("id,user_id,discord_name,pastebin_url,lore_url,submitted_at,is_approved,approved_at,approved_by")
         .eq("is_approved", false)
         .order("submitted_at", { ascending: false })
+        .limit(500),
+      admin
+        .from("parking_requests")
+        .select("id,user_id,garage_slots,hangar_slots,status,review_note,created_at,updated_at,approved_at,approved_by,rejected_at,rejected_by")
+        .eq("status", "pending")
+        .order("updated_at", { ascending: false })
         .limit(500),
     ]);
 
@@ -69,6 +75,10 @@ export async function GET(req: Request) {
       console.error("admin inbox lore error:", loreRes.error);
       return NextResponse.json({ ok: false, message: "Nem sikerült betölteni a karaktertörténeteket." }, { status: 500 });
     }
+    if (parkingRes.error) {
+      console.error("admin inbox parking error:", parkingRes.error);
+      return NextResponse.json({ ok: false, message: "Nem sikerült betölteni a parkolás igényléseket." }, { status: 500 });
+    }
 
     const userIds = Array.from(
       new Set(
@@ -77,6 +87,7 @@ export async function GET(req: Request) {
           ...(ticketRes.data ?? []).map((row: any) => row.user_id),
           ...(serviceRes.data ?? []).map((row: any) => row.user_id),
           ...(loreRes.data ?? []).map((row: any) => row.user_id),
+          ...(parkingRes.data ?? []).map((row: any) => row.user_id),
         ].filter(Boolean)
       )
     ) as string[];
@@ -103,7 +114,7 @@ export async function GET(req: Request) {
         submitted_at: row.submitted_at,
         title: `Hetek: ${row.weeks}`,
         subtitle: row.imgur_url || null,
-        status_label: row.is_approved ? "Elfogadva" : "Függőben",
+        status_label: row.is_approved ? "approved" : "pending",
         profile: row.user_id ? profileMap.get(row.user_id) ?? null : null,
         leadando: row,
       })),
@@ -114,7 +125,7 @@ export async function GET(req: Request) {
         submitted_at: row.created_at,
         title: row.title || "Ticket",
         subtitle: row.description || row.sanction_reason || row.namechange_reason || null,
-        status_label: row.status || "open",
+        status_label: row.status || "pending",
         profile: row.user_id ? profileMap.get(row.user_id) ?? null : null,
         ticket: row,
       })),
@@ -136,9 +147,25 @@ export async function GET(req: Request) {
         submitted_at: row.submitted_at,
         title: row.discord_name || "Karaktertörténet",
         subtitle: row.lore_url || row.pastebin_url || null,
-        status_label: row.is_approved ? "Elfogadva" : "Függőben",
+        status_label: row.is_approved ? "approved" : "pending",
         profile: row.user_id ? profileMap.get(row.user_id) ?? null : null,
         lore: row,
+      })),
+      ...(parkingRes.data ?? []).map((row: any) => ({
+        inbox_type: "parking",
+        id: row.id,
+        user_id: row.user_id ?? null,
+        submitted_at: row.updated_at || row.created_at,
+        title: "Parkolás igénylés",
+        subtitle: [
+          Array.isArray(row.garage_slots) && row.garage_slots.length > 0 ? `Parkolóház: ${row.garage_slots.join(", ")}` : null,
+          Array.isArray(row.hangar_slots) && row.hangar_slots.length > 0 ? `Hangár: ${row.hangar_slots.join(", ")}` : null,
+        ]
+          .filter(Boolean)
+          .join(" • "),
+        status_label: row.status || "pending",
+        profile: row.user_id ? profileMap.get(row.user_id) ?? null : null,
+        parking_request: row,
       })),
     ].sort((a: any, b: any) => {
       const ta = new Date(a.submitted_at || 0).getTime();

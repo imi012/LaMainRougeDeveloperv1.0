@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAppUser } from "@/lib/server/app-auth";
+import { checkFormSpamProtection } from "@/lib/server/form-spam-protection";
 
 export async function POST(req: Request) {
   try {
@@ -21,6 +22,22 @@ export async function POST(req: Request) {
     }
 
     const admin = createAdminClient();
+
+    const spamMessage = await checkFormSpamProtection({
+      admin,
+      table: "character_stories",
+      userId: auth.userId,
+      timeColumn: "updated_at",
+      fingerprint: {
+        discord_name,
+        pastebin_url,
+      },
+      selectColumns: ["discord_name", "pastebin_url"],
+    });
+
+    if (spamMessage) {
+      return NextResponse.json({ ok: false, message: spamMessage }, { status: 429 });
+    }
 
     const { error } = await admin
       .from("character_stories")

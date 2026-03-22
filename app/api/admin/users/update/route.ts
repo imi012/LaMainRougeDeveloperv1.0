@@ -60,6 +60,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, message: "Nem sikerült menteni." }, { status: 500 });
     }
 
+    if (patch.status === "inactive") {
+      const [{ error: parkingDeleteErr }, { error: parkingRequestDeleteErr }] = await Promise.all([
+        admin.from("parking_assignments").delete().eq("user_id", body.user_id),
+        admin.from("parking_requests").delete().eq("user_id", body.user_id),
+      ]);
+
+      if (parkingDeleteErr) {
+        console.error("admin users/update parking delete error:", parkingDeleteErr);
+        return NextResponse.json({ ok: false, message: "A parkolóhelyek törlése nem sikerült." }, { status: 500 });
+      }
+
+      if (parkingRequestDeleteErr) {
+        console.error("admin users/update parking request delete error:", parkingRequestDeleteErr);
+        return NextResponse.json({ ok: false, message: "A parkolás igénylés törlése nem sikerült." }, { status: 500 });
+      }
+    }
+
     await writeAdminAuditLog({
       actor_user_id: auth.userId,
       action: "user_update",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import DecisionBadge from "@/app/app/_components/decision-badge";
@@ -73,7 +73,31 @@ type LeadandoRow = {
   approved_until?: string | null;
 };
 
-type InboxItemType = "leadando" | "ticket" | "service" | "lore";
+type ParkingRequestRow = {
+  id: string;
+  user_id: string;
+  garage_slots: string[] | null;
+  hangar_slots: string[] | null;
+  status: "pending" | "approved" | "rejected" | string;
+  review_note: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  rejected_at: string | null;
+  rejected_by: string | null;
+  profile?: UserRow | null;
+};
+
+type ParkingAssignmentRow = {
+  id: string;
+  area: "garage" | "hangar";
+  slot_key: string;
+  user_id: string | null;
+  updated_at: string | null;
+};
+
+type InboxItemType = "leadando" | "ticket" | "service" | "lore" | "parking";
 
 type UnifiedInboxRow = {
   inbox_type: InboxItemType;
@@ -88,13 +112,14 @@ type UnifiedInboxRow = {
   ticket?: TicketRow | null;
   service?: ServiceRow | null;
   lore?: LoreRow | null;
+  parking_request?: ParkingRequestRow | null;
 };
 
 type TicketRow = {
   id: string;
   title: string;
   description: string;
-  status: "open" | "in_progress" | "closed" | string;
+  status: "pending" | "approved" | "rejected" | "open" | "in_progress" | "closed" | string;
   created_at: string;
   updated_at: string;
   type?: "szankcio" | "inaktivitas" | "nevvaltas" | string | null;
@@ -147,6 +172,8 @@ type Summary = {
   joined_at?: string | null;
   is_blacklisted?: boolean;
   pending_event_feedback_count?: number;
+  assigned_garage_slots?: string[];
+  assigned_hangar_slots?: string[];
 };
 
 type EventFeedbackRow = {
@@ -195,7 +222,7 @@ type LeadandoDashboardRow = {
   latest_submission: LeadandoRow | null;
 };
 
-type TabKey = "kezelo" | "invites" | "users" | "leadandok" | "kerdoivek" | "tgf" | "blacklist";
+type TabKey = "kezelo" | "invites" | "users" | "leadandok" | "parking" | "kerdoivek" | "tgf" | "blacklist";
 type UserPanelTab = "osszegzo" | "tgf" | "leadando" | "tickets" | "service" | "lore" | "warnings";
 
 function fmt(iso: string | null | undefined) {
@@ -272,6 +299,20 @@ function ticketTypeLabel(t: TicketRow) {
   return type ? type : "—";
 }
 
+function normalizeTicketDecisionStatus(status: string | null | undefined) {
+  const s = (status || "").toLowerCase();
+  if (s === "approved" || s === "accepted" || s === "closed") return "approved";
+  if (s === "rejected") return "rejected";
+  return "pending";
+}
+
+function prettyTicketDecision(status: string | null | undefined) {
+  const s = normalizeTicketDecisionStatus(status);
+  if (s === "approved") return "Elfogadva";
+  if (s === "rejected") return "Elutasítva";
+  return "Függőben";
+}
+
 function statusBadgeStyle(status: string | null | undefined) {
   switch ((status || "").toLowerCase()) {
     case "leadership":
@@ -326,7 +367,9 @@ function activeInactivityBadge(user: UserRow) {
   }
 
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+    today.getDate()
+  ).padStart(2, "0")}`;
   const fromKey = String(user.inactive_from).slice(0, 10);
   const toKey = String(user.inactive_to).slice(0, 10);
 
@@ -341,11 +384,58 @@ function activeInactivityBadge(user: UserRow) {
   );
 }
 
+function getUserStatusOrder(status: string | null | undefined) {
+  const s = (status || "").toLowerCase();
+
+  if (s === "preinvite") return 0;
+  if (s === "pending") return 1;
+  if (s === "active" || s === "leadership") return 2;
+  if (s === "inactive") return 3;
+
+  return 4;
+}
+
+function getUserRankPriority(rankId: string | null | undefined, ranks: RankRow[]) {
+  if (!rankId) return Number.MAX_SAFE_INTEGER;
+  const rank = ranks.find((r) => r.id === rankId);
+  return typeof rank?.priority === "number" ? rank.priority : Number.MAX_SAFE_INTEGER;
+}
+
+function compareUsersForLeadershipTable(a: UserRow, b: UserRow, ranks: RankRow[]) {
+  const aStatusOrder = getUserStatusOrder(a.status);
+  const bStatusOrder = getUserStatusOrder(b.status);
+
+  if (aStatusOrder !== bStatusOrder) {
+    return aStatusOrder - bStatusOrder;
+  }
+
+  const aStatus = (a.status || "").toLowerCase();
+  const bStatus = (b.status || "").toLowerCase();
+  const aIsRankSorted = aStatus === "active" || aStatus === "leadership";
+  const bIsRankSorted = bStatus === "active" || bStatus === "leadership";
+
+  if (aIsRankSorted && bIsRankSorted) {
+    const aPriority = getUserRankPriority(a.rank_id, ranks);
+    const bPriority = getUserRankPriority(b.rank_id, ranks);
+
+    if (aPriority !== bPriority) {
+      return aPriority - bPriority;
+    }
+  }
+
+  const aName = (a.ic_name || "").trim().toLocaleLowerCase("hu");
+  const bName = (b.ic_name || "").trim().toLocaleLowerCase("hu");
+
+  if (aName !== bName) {
+    return aName.localeCompare(bName, "hu");
+  }
+
+  return (a.created_at || "").localeCompare(b.created_at || "");
+}
+
 function Badge({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${className}`.trim()}
-    >
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${className}`.trim()}>
       {children}
     </span>
   );
@@ -355,13 +445,7 @@ function getTicketImgurUrl(t: TicketRow) {
   const a = (t.sanction_imgur_url || "").trim();
   if (a) return a;
 
-  const b = (
-    t.payload?.sanction_imgur_url ||
-    t.payload?.imgur_url ||
-    t.payload?.imgur ||
-    t.payload?.image ||
-    ""
-  )
+  const b = (t.payload?.sanction_imgur_url || t.payload?.imgur_url || t.payload?.imgur || t.payload?.image || "")
     .toString()
     .trim();
   if (b) return b;
@@ -373,7 +457,7 @@ function getTicketImgurUrl(t: TicketRow) {
 }
 
 export default function VezetosegPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
 
   const [tab, setTab] = useState<TabKey>("kezelo");
@@ -410,9 +494,15 @@ export default function VezetosegPage() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => compareUsersForLeadershipTable(a, b, ranks));
+  }, [users, ranks]);
+
   const [leadandoDashboardRows, setLeadandoDashboardRows] = useState<LeadandoDashboardRow[]>([]);
   const [leadandoDeadlineDrafts, setLeadandoDeadlineDrafts] = useState<Record<string, string>>({});
   const [leadandoDeadlineEditing, setLeadandoDeadlineEditing] = useState<Record<string, boolean>>({});
+
+  const realtimeRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
   const [userPanelTab, setUserPanelTab] = useState<UserPanelTab>("osszegzo");
@@ -425,6 +515,8 @@ export default function VezetosegPage() {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [serviceRequests, setServiceRequests] = useState<ServiceRow[]>([]);
   const [lore, setLore] = useState<LoreRow[]>([]);
+  const [parkingRequests, setParkingRequests] = useState<ParkingRequestRow[]>([]);
+  const [parkingAssignments, setParkingAssignments] = useState<ParkingAssignmentRow[]>([]);
   const [unifiedInbox, setUnifiedInbox] = useState<UnifiedInboxRow[]>([]);
   const [tgfRows, setTgfRows] = useState<TgfListRow[]>([]);
   const [tgfDrafts, setTgfDrafts] = useState<Record<string, string>>({});
@@ -530,14 +622,8 @@ export default function VezetosegPage() {
 
   async function loadSharedData() {
     const [membersRes, ranksRes] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("user_id,ic_name,discord_name,status")
-        .order("ic_name", { ascending: true }),
-      supabase
-        .from("ranks")
-        .select("id,name,category,priority,is_archived")
-        .order("priority", { ascending: true }),
+      supabase.from("profiles").select("user_id,ic_name,discord_name,status").order("ic_name", { ascending: true }),
+      supabase.from("ranks").select("id,name,category,priority,is_archived").order("priority", { ascending: true }),
     ]);
 
     if (!membersRes.error) setMembers((membersRes.data ?? []) as any);
@@ -558,10 +644,7 @@ export default function VezetosegPage() {
     setError(null);
     setBusy("invite:generate");
     try {
-      const json = await apiFetch("/api/admin/invites/generate", {
-        method: "POST",
-      });
-
+      const json = await apiFetch("/api/admin/invites/generate", { method: "POST" });
       setLastGeneratedCode(json.invite ?? null);
       await loadInvites();
     } catch (e: any) {
@@ -642,15 +725,9 @@ export default function VezetosegPage() {
         : new Date(`${normalized}T23:59:59`).toISOString();
 
       setLeadando((prev) =>
-        prev.map((l) =>
-          l.id === submissionId
-            ? {
-                ...l,
-                approved_until: approvedUntilIso,
-              }
-            : l
-        )
+        prev.map((l) => (l.id === submissionId ? { ...l, approved_until: approvedUntilIso } : l))
       );
+
       setLeadandoDashboardRows((prev) =>
         prev.map((row) =>
           row.user_id === userId
@@ -659,26 +736,27 @@ export default function VezetosegPage() {
                 leadando_due_at: approvedUntilIso,
                 latest_submission:
                   row.latest_submission && row.latest_submission.id === submissionId
-                    ? {
-                        ...row.latest_submission,
-                        approved_until: approvedUntilIso,
-                      }
+                    ? { ...row.latest_submission, approved_until: approvedUntilIso }
                     : row.latest_submission,
               }
             : row
         )
       );
+
       setLeadandoDeadlineDrafts((prev) => ({
         ...prev,
         [userId]: toDateInputValue(approvedUntilIso),
       }));
+
       setLeadandoDeadlineEditing((prev) => ({
         ...prev,
         [userId]: false,
       }));
+
       if (selectedUser?.user_id === userId) {
         setSelectedUser((prev) => (prev ? { ...prev, leadando_due_at: approvedUntilIso } : prev));
       }
+
       setUsers((prev) => prev.map((u) => (u.user_id === userId ? { ...u, leadando_due_at: approvedUntilIso } : u)));
       await loadUsers(page);
     } catch (e: any) {
@@ -694,6 +772,7 @@ export default function VezetosegPage() {
     setTickets([]);
     setServiceRequests([]);
     setLore([]);
+    setParkingAssignments([]);
     setTgfNote(null);
     setTgfDraft("");
     setIsEditingTgfDetail(false);
@@ -703,14 +782,73 @@ export default function VezetosegPage() {
     setEditedIcName("");
   }
 
-  async function openUser(row: UserRow) {
-    if (selectedUser?.user_id === row.user_id) {
-      setSelectedUser(null);
-      clearUserDetailState();
-      return;
-    }
+async function refreshSelectedUserDetails(userId: string) {
+  try {
+    const json = await apiFetch("/api/admin/users/detail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId }),
+    });
 
-    setSelectedUser(row);
+    setWarnings((json.warnings ?? []) as WarningRow[]);
+    setLeadando((json.leadando ?? []) as LeadandoRow[]);
+    setTickets((json.tickets ?? []) as TicketRow[]);
+    setServiceRequests((json.service_requests ?? []) as ServiceRow[]);
+    setLore((json.lore ?? []) as LoreRow[]);
+    setParkingAssignments((json.parking_assignments ?? []) as ParkingAssignmentRow[]);
+    setTgfNote((json.tgf_note ?? null) as TgfNoteRow | null);
+    setTgfDraft(((json.tgf_note?.notes ?? "") as string));
+    setEventFeedbacks((json.event_feedbacks ?? []) as EventFeedbackRow[]);
+    setSummary((json.summary ?? null) as Summary | null);
+
+    if (json.summary?.discord_name) {
+      setSelectedUser((prev) =>
+        prev && prev.user_id === userId
+          ? { ...prev, discord_name: json.summary.discord_name }
+          : prev
+      );
+    }
+  } catch (e: any) {
+    console.error("refreshSelectedUserDetails error:", e);
+  }
+}
+
+async function reloadVisibleLeadershipData(options?: { includeSelectedUser?: boolean }) {
+  const jobs: Promise<any>[] = [loadSharedData()];
+
+  if (tab === "invites") jobs.push(loadInvites());
+  if (tab === "users") jobs.push(loadUsers(page));
+  if (tab === "leadandok") jobs.push(loadLeadandoDashboard());
+  if (tab === "parking" || tab === "kezelo") jobs.push(loadParkingRequests());
+  if (tab === "kezelo" || tab === "kerdoivek") jobs.push(loadUnifiedInbox());
+  if (tab === "kezelo" || tab === "tgf") jobs.push(loadTgfRows());
+  if (tab === "blacklist") jobs.push(loadBlacklist());
+
+  await Promise.allSettled(jobs);
+
+  if (options?.includeSelectedUser && selectedUser?.user_id) {
+    await refreshSelectedUserDetails(selectedUser.user_id);
+  }
+}
+
+function scheduleRealtimeRefresh(includeSelectedUser = true) {
+  if (realtimeRefreshTimeoutRef.current) {
+    clearTimeout(realtimeRefreshTimeoutRef.current);
+  }
+
+  realtimeRefreshTimeoutRef.current = setTimeout(() => {
+    void reloadVisibleLeadershipData({ includeSelectedUser });
+  }, 250);
+}
+
+async function openUser(row: UserRow) {
+  if (selectedUser?.user_id === row.user_id) {
+    setSelectedUser(null);
+    clearUserDetailState();
+    return;
+  }
+
+  setSelectedUser(row);
     setEditedIcName(row.ic_name || "");
     setEditingIcName(false);
     setWarnings([]);
@@ -718,6 +856,7 @@ export default function VezetosegPage() {
     setTickets([]);
     setServiceRequests([]);
     setLore([]);
+    setParkingAssignments([]);
     setTgfNote(null);
     setTgfDraft("");
     setIsEditingTgfDetail(false);
@@ -738,10 +877,12 @@ export default function VezetosegPage() {
       setTickets((json.tickets ?? []) as TicketRow[]);
       setServiceRequests((json.service_requests ?? []) as ServiceRow[]);
       setLore((json.lore ?? []) as LoreRow[]);
+      setParkingAssignments((json.parking_assignments ?? []) as ParkingAssignmentRow[]);
       setTgfNote((json.tgf_note ?? null) as TgfNoteRow | null);
       setTgfDraft(((json.tgf_note?.notes ?? "") as string));
       setEventFeedbacks((json.event_feedbacks ?? []) as EventFeedbackRow[]);
       setSummary((json.summary ?? null) as Summary | null);
+
       if (json.summary?.discord_name) {
         setSelectedUser((prev) => (prev ? { ...prev, discord_name: json.summary.discord_name } : prev));
       }
@@ -767,7 +908,6 @@ export default function VezetosegPage() {
       const merged: UserRow = { ...selectedUser, ...patch } as any;
       setSelectedUser(merged);
       setUsers((prev) => prev.map((u) => (u.user_id === merged.user_id ? merged : u)));
-
       await loadUsers(page);
     } catch (e: any) {
       setError(e?.message ?? "Hiba történt.");
@@ -800,12 +940,10 @@ export default function VezetosegPage() {
 
       const merged: UserRow = { ...selectedUser, ic_name: newName };
       setSelectedUser(merged);
-      setUsers((prev) =>
-        prev.map((u) => (u.user_id === selectedUser.user_id ? { ...u, ic_name: newName } : u))
-      );
-      setMembers((prev) =>
-        prev.map((m) => (m.user_id === selectedUser.user_id ? { ...m, ic_name: newName } : m))
-      );
+
+      setUsers((prev) => prev.map((u) => (u.user_id === selectedUser.user_id ? { ...u, ic_name: newName } : u)));
+      setMembers((prev) => prev.map((m) => (m.user_id === selectedUser.user_id ? { ...m, ic_name: newName } : m)));
+
       setEditingIcName(false);
       setEditedIcName(newName);
 
@@ -846,6 +984,7 @@ export default function VezetosegPage() {
             : l
         )
       );
+
       setUsers((prev) =>
         prev.map((u) =>
           selectedUser && u.user_id === selectedUser.user_id
@@ -853,9 +992,11 @@ export default function VezetosegPage() {
             : u
         )
       );
+
       if (selectedUser) {
         setSelectedUser((prev) => (prev ? { ...prev, leadando_due_at: approve ? normalizedApprovedUntil : null } : prev));
       }
+
       await loadUnifiedInbox();
       await loadUsers(page);
       await loadLeadandoDashboard();
@@ -986,6 +1127,7 @@ export default function VezetosegPage() {
       });
 
       await loadUnifiedInbox();
+
       setServiceRequests((prev) =>
         prev.map((s) =>
           s.id === id
@@ -1038,14 +1180,11 @@ export default function VezetosegPage() {
       setLore((prev) =>
         prev.map((l) =>
           l.id === id
-            ? {
-                ...l,
-                is_approved: approve,
-                approved_at: approve ? new Date().toISOString() : null,
-              }
+            ? { ...l, is_approved: approve, approved_at: approve ? new Date().toISOString() : null }
             : l
         )
       );
+
       await loadUnifiedInbox();
 
       setSummary((prev) => {
@@ -1075,6 +1214,7 @@ export default function VezetosegPage() {
       const remaining = lore.filter((l) => l.id !== id);
       setLore(remaining);
       await loadUnifiedInbox();
+
       setSummary((prev) => {
         if (!prev) return prev;
         return {
@@ -1084,6 +1224,62 @@ export default function VezetosegPage() {
           discord_name: remaining[0]?.discord_name ?? prev.discord_name ?? null,
         };
       });
+    } catch (e: any) {
+      setError(e?.message ?? "Hiba történt.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function loadParkingRequests() {
+    try {
+      const json = await apiFetch("/api/parking/request-list");
+      setParkingRequests((json.rows ?? []) as ParkingRequestRow[]);
+    } catch (e: any) {
+      setError(e?.message ?? "Hiba történt.");
+    }
+  }
+
+  async function reviewParkingRequest(requestId: string, approve: boolean) {
+    setError(null);
+    setBusy(`parking:${requestId}`);
+
+    try {
+      const json = await apiFetch("/api/parking/request-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: requestId, approve }),
+      });
+
+      const updated = json.row as ParkingRequestRow;
+      setParkingRequests((prev) => prev.map((item) => (item.id === requestId ? { ...item, ...updated } : item)));
+      await loadUnifiedInbox();
+      await loadUsers(page);
+      if (selectedUser?.user_id === updated.user_id) {
+        const currentUser = selectedUser;
+        setSelectedUser(null);
+        await openUser({ ...currentUser });
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Hiba történt.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteParkingRequest(requestId: string) {
+    setError(null);
+    setBusy(`parkingdel:${requestId}`);
+
+    try {
+      await apiFetch("/api/admin/parking-request/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: requestId }),
+      });
+
+      setParkingRequests((prev) => prev.filter((item) => item.id !== requestId));
+      await loadUnifiedInbox();
     } catch (e: any) {
       setError(e?.message ?? "Hiba történt.");
     } finally {
@@ -1115,6 +1311,7 @@ export default function VezetosegPage() {
   async function saveTgfNote(userId: string, notes: string) {
     setError(null);
     setBusy(`tgf:${userId}`);
+
     try {
       const json = await apiFetch("/api/admin/tgf/upsert", {
         method: "POST",
@@ -1123,6 +1320,7 @@ export default function VezetosegPage() {
       });
 
       const row = (json.row ?? null) as TgfNoteRow | null;
+
       setTgfRows((prev) => prev.map((item) => (item.profile.user_id === userId ? { ...item, tgf_note: row } : item)));
       setTgfDrafts((prev) => ({ ...prev, [userId]: notes }));
 
@@ -1148,6 +1346,13 @@ export default function VezetosegPage() {
       return;
     }
 
+    if (row.inbox_type === "parking") {
+      setError(null);
+      setTab("parking");
+      await loadParkingRequests();
+      return;
+    }
+
     if (!row.profile?.user_id) {
       setError("Ehhez a beküldéshez nem található felhasználó.");
       return;
@@ -1162,13 +1367,12 @@ export default function VezetosegPage() {
     setTickets([]);
     setServiceRequests([]);
     setLore([]);
+    setParkingAssignments([]);
     setTgfNote(null);
     setTgfDraft("");
     setIsEditingTgfDetail(false);
     setSummary(null);
-    setUserPanelTab(
-      row.inbox_type === "ticket" ? "tickets" : row.inbox_type === "service" ? "service" : "lore"
-    );
+    setUserPanelTab(row.inbox_type === "ticket" ? "tickets" : row.inbox_type === "service" ? "service" : "lore");
     setError(null);
     setBusy(`open:${profile.user_id}`);
     setTab("users");
@@ -1185,10 +1389,12 @@ export default function VezetosegPage() {
       setTickets((json.tickets ?? []) as TicketRow[]);
       setServiceRequests((json.service_requests ?? []) as ServiceRow[]);
       setLore((json.lore ?? []) as LoreRow[]);
+      setParkingAssignments((json.parking_assignments ?? []) as ParkingAssignmentRow[]);
       setTgfNote((json.tgf_note ?? null) as TgfNoteRow | null);
       setTgfDraft(((json.tgf_note?.notes ?? "") as string));
       setEventFeedbacks((json.event_feedbacks ?? []) as EventFeedbackRow[]);
       setSummary((json.summary ?? null) as Summary | null);
+
       if (json.summary?.discord_name) {
         setSelectedUser((prev) => (prev ? { ...prev, discord_name: json.summary.discord_name } : prev));
       }
@@ -1224,11 +1430,7 @@ export default function VezetosegPage() {
       }
 
       if (blacklistMode === "existing" && blacklistSelectedUserId) {
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.user_id === blacklistSelectedUserId ? { ...u, status: "inactive" } : u
-          )
-        );
+        setUsers((prev) => prev.map((u) => (u.user_id === blacklistSelectedUserId ? { ...u, status: "inactive" } : u)));
         setSelectedUser((prev) =>
           prev && prev.user_id === blacklistSelectedUserId ? { ...prev, status: "inactive" } : prev
         );
@@ -1239,6 +1441,7 @@ export default function VezetosegPage() {
       setBlacklistManualIcName("");
       setBlacklistManualDiscordName("");
       setBlacklistReason("");
+
       await loadSharedData();
       await loadUsers(page);
     } catch (e: any) {
@@ -1263,9 +1466,7 @@ export default function VezetosegPage() {
 
       if (row.user_id) {
         const restoredStatus = row.previous_status || "pending";
-        setUsers((prev) =>
-          prev.map((u) => (u.user_id === row.user_id ? { ...u, status: restoredStatus } : u))
-        );
+        setUsers((prev) => prev.map((u) => (u.user_id === row.user_id ? { ...u, status: restoredStatus } : u)));
         setSelectedUser((prev) =>
           prev && prev.user_id === row.user_id ? { ...prev, status: restoredStatus } : prev
         );
@@ -1284,7 +1485,6 @@ export default function VezetosegPage() {
   useEffect(() => {
     loadSessionStable();
     loadSharedData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1293,6 +1493,7 @@ export default function VezetosegPage() {
       incomingTab === "invites" ||
       incomingTab === "users" ||
       incomingTab === "leadandok" ||
+      incomingTab === "parking" ||
       incomingTab === "kerdoivek" ||
       incomingTab === "tgf" ||
       incomingTab === "blacklist" ||
@@ -1307,10 +1508,10 @@ export default function VezetosegPage() {
     if (tab === "invites") loadInvites();
     if (tab === "users") loadUsers(1);
     if (tab === "leadandok") loadLeadandoDashboard();
+    if (tab === "parking" || tab === "kezelo") loadParkingRequests();
     if (tab === "kezelo" || tab === "kerdoivek") loadUnifiedInbox();
     if (tab === "kezelo" || tab === "tgf") loadTgfRows();
     if (tab === "blacklist") loadBlacklist();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, token]);
 
   useEffect(() => {
@@ -1322,14 +1523,58 @@ export default function VezetosegPage() {
       if (tab === "invites") loadInvites();
       if (tab === "users") loadUsers(page);
       if (tab === "leadandok") loadLeadandoDashboard();
+      if (tab === "parking" || tab === "kezelo") loadParkingRequests();
       if (tab === "kezelo" || tab === "kerdoivek") loadUnifiedInbox();
       if (tab === "kezelo" || tab === "tgf") loadTgfRows();
       if (tab === "blacklist") loadBlacklist();
     }, 30000);
 
     return () => window.clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, tab, page]);
+
+useEffect(() => {
+  if (!token) return;
+
+  const tables = [
+    "profiles",
+    "ranks",
+    "invite_codes",
+    "warnings",
+    "leadando_submissions",
+    "tickets",
+    "service_requests",
+    "character_lore",
+    "parking_requests",
+    "parking_assignments",
+    "tgf_notes",
+    "blacklist",
+    "event_feedback",
+  ] as const;
+
+  const channel = supabase.channel("vezetoseg-live-sync");
+
+  tables.forEach((table) => {
+    channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table },
+      () => {
+        if (document.visibilityState !== "visible") return;
+        scheduleRealtimeRefresh(true);
+      }
+    );
+  });
+
+  channel.subscribe();
+
+  return () => {
+    if (realtimeRefreshTimeoutRef.current) {
+      clearTimeout(realtimeRefreshTimeoutRef.current);
+      realtimeRefreshTimeoutRef.current = null;
+    }
+    void supabase.removeChannel(channel);
+  };
+}, [token, tab, page, selectedUser?.user_id, supabase]);
+
 
   const pendingServiceCount = serviceRequests.filter((s) => s.status === "pending").length;
   const activeWarningsCount = warnings.filter((w) => w.is_active).length;
@@ -1345,21 +1590,24 @@ export default function VezetosegPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-6">
-      <section className="lmr-surface-soft rounded-[28px] p-6 md:p-7">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start">
+    <div className="lmr-page lmr-page-wide space-y-8">
+      <section className="space-y-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">
+            <span className="lmr-chip inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
               La Main Rouge
-            </div>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">Vezetőség</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/70">
-              Vezetőségi kezelőfelület, meghívókódokkal, felhasználókezeléssel,
-              beérkezettekkel, TGF-fel és blacklist nézettel.
+            </span>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">
+              Vezetőség
+            </h1>
+            <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/75">
+              Vezetőségi kezelőfelület, meghívókódokkal, felhasználókezeléssel, beérkezettekkel, TGF-fel és blacklist nézettel.
             </p>
           </div>
-          <div className="ml-auto text-sm text-white/55">
-            Most service-role API-kal megy, hogy stabilan működjön.
+
+          <div className="text-sm text-white/55">
+            Service-role API-kkal működik.
           </div>
         </div>
       </section>
@@ -1371,97 +1619,110 @@ export default function VezetosegPage() {
       )}
 
       <div className="flex flex-wrap gap-2">
-        <button className={tabBtnStyle(tab === "kezelo")} onClick={() => setTab("kezelo")}>
-          Kezelőpanel
-        </button>
-        <button className={tabBtnStyle(tab === "kerdoivek")} onClick={() => setTab("kerdoivek")}>
-          Beérkezettek
-        </button>
-        <button className={tabBtnStyle(tab === "users")} onClick={() => setTab("users")}>
-          Felhasználók
-        </button>
-        <button className={tabBtnStyle(tab === "leadandok")} onClick={() => setTab("leadandok")}>
-          Leadandók
-        </button>
-        <button className={tabBtnStyle(tab === "tgf")} onClick={() => setTab("tgf")}>
-          TGF
-        </button>
-        <button className={tabBtnStyle(tab === "invites")} onClick={() => setTab("invites")}>
-          Meghívókódok
-        </button>
-        <button className={tabBtnStyle(tab === "blacklist")} onClick={() => setTab("blacklist")}>
-          Blacklist
-        </button>
+        <button className={tabBtnStyle(tab === "kezelo")} onClick={() => setTab("kezelo")}>Kezelőpanel</button>
+        <button className={tabBtnStyle(tab === "kerdoivek")} onClick={() => setTab("kerdoivek")}>Beérkezettek</button>
+        <button className={tabBtnStyle(tab === "users")} onClick={() => setTab("users")}>Felhasználók</button>
+        <button className={tabBtnStyle(tab === "leadandok")} onClick={() => setTab("leadandok")}>Leadandók</button>
+        <button className={tabBtnStyle(tab === "parking")} onClick={() => setTab("parking")}>Parkolás igénylés</button>
+        <button className={tabBtnStyle(tab === "tgf")} onClick={() => setTab("tgf")}>TGF</button>
+        <button className={tabBtnStyle(tab === "invites")} onClick={() => setTab("invites")}>Meghívókódok</button>
+        <button className={tabBtnStyle(tab === "blacklist")} onClick={() => setTab("blacklist")}>Blacklist</button>
       </div>
 
       {tab === "kezelo" && (
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
-            <div className="text-sm opacity-70">Aktív meghívók</div>
-            <div className="mt-2 text-3xl font-bold">{activeInvites.length}</div>
+        <section className="space-y-5">
+          <div>
+            <h2 className="text-xl font-semibold text-white">Kezelőpanel</h2>
+            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
           </div>
 
-          <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
-            <div className="text-sm opacity-70">Felhasználók</div>
-            <div className="mt-2 text-3xl font-bold">{count || users.length}</div>
-          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="border border-white/10 rounded-[24px] p-5">
+              <div className="text-sm text-white/65">Aktív meghívók</div>
+              <div className="mt-2 text-3xl font-bold">{activeInvites.length}</div>
+            </div>
 
-          <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
-            <div className="text-sm opacity-70">Rangok</div>
-            <div className="mt-2 text-3xl font-bold">{ranks.length}</div>
-          </div>
+            <div className="border border-white/10 rounded-[24px] p-5">
+              <div className="text-sm text-white/65">Felhasználók</div>
+              <div className="mt-2 text-3xl font-bold">{count || users.length}</div>
+            </div>
 
-          <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm opacity-70">Leadandók</div>
-                <div className="mt-2 text-3xl font-bold">{leadandoDashboardRows.length}</div>
+            <div className="border border-white/10 rounded-[24px] p-5">
+              <div className="text-sm text-white/65">Rangok</div>
+              <div className="mt-2 text-3xl font-bold">{ranks.length}</div>
+            </div>
+
+            <div className="border border-white/10 rounded-[24px] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-white/65">Leadandók</div>
+                  <div className="mt-2 text-3xl font-bold">{leadandoDashboardRows.length}</div>
+                </div>
+                <button
+                  onClick={() => setTab("leadandok")}
+                  className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
+                >
+                  Megnyitás
+                </button>
               </div>
-              <button
-                onClick={() => setTab("leadandok")}
-                className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
-              >
-                Megnyitás
-              </button>
+            </div>
+
+            <div className="border border-white/10 rounded-[24px] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-white/65">Beérkezett ügyek</div>
+                  <div className="mt-2 text-3xl font-bold">{unifiedInbox.length}</div>
+                </div>
+                <button
+                  onClick={() => setTab("kerdoivek")}
+                  className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
+                >
+                  Megnyitás
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-white/10 rounded-[24px] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-white/65">Parkolás igénylések</div>
+                  <div className="mt-2 text-3xl font-bold">{parkingRequests.filter((row) => row.status === "pending").length}</div>
+                </div>
+                <button
+                  onClick={() => setTab("parking")}
+                  className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
+                >
+                  Megnyitás
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-white/10 rounded-[24px] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-white/65">TGF jelentkezők</div>
+                  <div className="mt-2 text-3xl font-bold">{tgfRows.length}</div>
+                </div>
+                <button
+                  onClick={() => setTab("tgf")}
+                  className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
+                >
+                  Megnyitás
+                </button>
+              </div>
             </div>
           </div>
-
-          <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm opacity-70">Beérkezett ügyek</div>
-                <div className="mt-2 text-3xl font-bold">{unifiedInbox.length}</div>
-              </div>
-              <button
-                onClick={() => setTab("kerdoivek")}
-                className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
-              >
-                Megnyitás
-              </button>
-            </div>
-          </div>
-
-          <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm opacity-70">TGF jelentkezők</div>
-                <div className="mt-2 text-3xl font-bold">{tgfRows.length}</div>
-              </div>
-              <button
-                onClick={() => setTab("tgf")}
-                className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
-              >
-                Megnyitás
-              </button>
-            </div>
-          </div>
-        </div>
+        </section>
       )}
 
       {tab === "invites" && (
-        <div className="mt-6">
+        <section className="space-y-5">
           <div className="flex items-center gap-2">
-            <div className="text-lg font-semibold">Meghívókódok</div>
+            <div>
+              <h2 className="text-xl font-semibold text-white">Meghívókódok</h2>
+              <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+            </div>
+
             <button
               onClick={generateInvite}
               disabled={!token || busy === "invite:generate"}
@@ -1472,13 +1733,12 @@ export default function VezetosegPage() {
           </div>
 
           {lastGeneratedCode && (
-            <div className="mt-4 rounded-xl border border-green-500/30 bg-green-900/20 p-3 text-sm text-green-200">
-              Új kód: <span className="font-semibold">{lastGeneratedCode.code}</span> • Lejárat:{" "}
-              {fmt(lastGeneratedCode.expires_at)}
+            <div className="rounded-xl border border-green-500/30 bg-green-900/20 p-3 text-sm text-green-200">
+              Új kód: <span className="font-semibold">{lastGeneratedCode.code}</span> • Lejárat: {fmt(lastGeneratedCode.expires_at)}
             </div>
           )}
 
-          <div className="mt-4 overflow-x-auto rounded-[24px] border border-white/10">
+          <div className="overflow-x-auto rounded-[24px] border border-white/10">
             <table className="w-full text-sm">
               <thead className="bg-white/5">
                 <tr className="text-left">
@@ -1493,9 +1753,7 @@ export default function VezetosegPage() {
               <tbody>
                 {invites.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-3 opacity-70" colSpan={7}>
-                      Nincs meghívókód.
-                    </td>
+                    <td className="px-3 py-3 opacity-70" colSpan={7}>Nincs meghívókód.</td>
                   </tr>
                 ) : (
                   invites.map((row) => (
@@ -1503,9 +1761,7 @@ export default function VezetosegPage() {
                       <td className="px-3 py-2">{row.id}</td>
                       <td className="px-3 py-2">{fmt(row.created_at)}</td>
                       <td className="px-3 py-2">{fmt(row.expires_at)}</td>
-                      <td className="px-3 py-2">
-                        {row.uses}/{row.max_uses}
-                      </td>
+                      <td className="px-3 py-2">{row.uses}/{row.max_uses}</td>
                       <td className="px-3 py-2">{isInviteActive(row) ? "Aktív" : "Lejárt / Inaktív"}</td>
                       <td className="px-3 py-2">
                         <button
@@ -1522,13 +1778,17 @@ export default function VezetosegPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
 
       {tab === "users" && (
-        <div className="mt-6">
+        <section className="space-y-5">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-lg font-semibold">Felhasználók</div>
+            <div>
+              <h2 className="text-xl font-semibold text-white">Felhasználók</h2>
+              <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+            </div>
+
             <input
               className="ml-auto rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none"
               placeholder="Keresés név alapján..."
@@ -1544,7 +1804,7 @@ export default function VezetosegPage() {
             </button>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-[24px] border border-white/10">
+          <div className="overflow-x-auto rounded-[24px] border border-white/10">
             <table className="w-full text-sm">
               <thead className="bg-white/5">
                 <tr className="text-left">
@@ -1558,14 +1818,12 @@ export default function VezetosegPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.length === 0 ? (
+                {sortedUsers.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-3 opacity-70" colSpan={7}>
-                      Nincs találat.
-                    </td>
+                    <td className="px-3 py-3 opacity-70" colSpan={7}>Nincs találat.</td>
                   </tr>
                 ) : (
-                  users.map((u) => {
+                  sortedUsers.map((u) => {
                     const rankName = getRankName(u.rank_id);
                     const isOpen = selectedUser?.user_id === u.user_id;
                     const isBusy = !token || busy === `open:${u.user_id}`;
@@ -1580,15 +1838,9 @@ export default function VezetosegPage() {
                         }}
                       >
                         <td className="px-3 py-2">{u.ic_name || "—"}</td>
-                        <td className="px-3 py-2">
-                          <Badge className={statusBadgeStyle(u.status)}>{prettyStatus(u.status)}</Badge>
-                        </td>
-                        <td className="px-3 py-2">
-                          <Badge className={roleBadgeStyle(u.site_role)}>{prettyRole(u.site_role)}</Badge>
-                        </td>
-                        <td className="px-3 py-2">
-                          {rankName ? <RankBadge name={rankName} /> : "—"}
-                        </td>
+                        <td className="px-3 py-2"><Badge className={statusBadgeStyle(u.status)}>{prettyStatus(u.status)}</Badge></td>
+                        <td className="px-3 py-2"><Badge className={roleBadgeStyle(u.site_role)}>{prettyRole(u.site_role)}</Badge></td>
+                        <td className="px-3 py-2">{rankName ? <RankBadge name={rankName} /> : "—"}</td>
                         <td className="px-3 py-2">{fmt(u.created_at)}</td>
                         <td className="px-3 py-2">{formatDateOnly(u.leadando_due_at)}</td>
                         <td className="px-3 py-2">{activeInactivityBadge(u)}</td>
@@ -1600,7 +1852,7 @@ export default function VezetosegPage() {
             </table>
           </div>
 
-          <div className="mt-4 flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => loadUsers(Math.max(1, page - 1))}
               disabled={!token || page <= 1}
@@ -1608,9 +1860,7 @@ export default function VezetosegPage() {
             >
               Előző
             </button>
-            <div className="text-sm opacity-70">
-              Oldal: {page} / {totalPages}
-            </div>
+            <div className="text-sm opacity-70">Oldal: {page} / {totalPages}</div>
             <button
               onClick={() => loadUsers(Math.min(totalPages, page + 1))}
               disabled={!token || page >= totalPages}
@@ -1621,7 +1871,7 @@ export default function VezetosegPage() {
           </div>
 
           {selectedUser && (
-            <div className="mt-6 lmr-surface-soft rounded-[26px] p-5 md:p-6">
+            <div className="space-y-5 border border-white/10 rounded-[26px] p-5 md:p-6">
               <div className="flex items-start gap-4">
                 <div className="min-w-0">
                   {!editingIcName ? (
@@ -1630,16 +1880,12 @@ export default function VezetosegPage() {
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <Badge className={statusBadgeStyle(selectedUser.status)}>{prettyStatus(selectedUser.status)}</Badge>
                         <Badge className={roleBadgeStyle(selectedUser.site_role)}>{prettyRole(selectedUser.site_role)}</Badge>
-                        {getRankName(selectedUser.rank_id) ? <RankBadge name={getRankName(selectedUser.rank_id)} /> : null}
+                        {getRankName(selectedUser.rank_id) ? <RankBadge name={getRankName(selectedUser.rank_id)!} /> : null}
                         {summary?.is_blacklisted ? (
-                          <Badge className="border-red-500/30 bg-red-500/15 text-red-200">
-                            Blacklisten
-                          </Badge>
+                          <Badge className="border-red-500/30 bg-red-500/15 text-red-200">Blacklisten</Badge>
                         ) : null}
                       </div>
-                      <div className="mt-2 text-sm opacity-70">
-                        Discord név: {summary?.discord_name || selectedUser.discord_name || "—"}
-                      </div>
+                      <div className="mt-2 text-sm opacity-70">Discord név: {summary?.discord_name || selectedUser.discord_name || "—"}</div>
                       <div className="mt-1 text-sm opacity-70">User ID: {selectedUser.user_id}</div>
 
                       <button
@@ -1718,110 +1964,84 @@ export default function VezetosegPage() {
                     disabled={!token || busy === `save:${selectedUser.user_id}`}
                   >
                     <option value="">Nincs rang</option>
-                    {ranks
-                      .filter((r) => !r.is_archived)
-                      .map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
+                    {ranks.filter((r) => !r.is_archived).map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <button className={subTabStyle(userPanelTab === "osszegzo")} onClick={() => setUserPanelTab("osszegzo")}>
-                  Összegző
-                </button>
-                <button className={subTabStyle(userPanelTab === "tgf")} onClick={() => setUserPanelTab("tgf")}>
-                  TGF
-                </button>
-                <button className={subTabStyle(userPanelTab === "leadando")} onClick={() => setUserPanelTab("leadando")}>
-                  Leadandó
-                </button>
-                <button className={subTabStyle(userPanelTab === "tickets")} onClick={() => setUserPanelTab("tickets")}>
-                  Ticketek
-                </button>
-                <button className={subTabStyle(userPanelTab === "service")} onClick={() => setUserPanelTab("service")}>
-                  Szereltetés
-                </button>
-                <button className={subTabStyle(userPanelTab === "lore")} onClick={() => setUserPanelTab("lore")}>
-                  Karaktertörténet
-                </button>
-                <button className={subTabStyle(userPanelTab === "warnings")} onClick={() => setUserPanelTab("warnings")}>
-                  Figyelmeztetések
-                </button>
+                <button className={subTabStyle(userPanelTab === "osszegzo")} onClick={() => setUserPanelTab("osszegzo")}>Összegző</button>
+                <button className={subTabStyle(userPanelTab === "tgf")} onClick={() => setUserPanelTab("tgf")}>TGF</button>
+                <button className={subTabStyle(userPanelTab === "leadando")} onClick={() => setUserPanelTab("leadando")}>Leadandó</button>
+                <button className={subTabStyle(userPanelTab === "tickets")} onClick={() => setUserPanelTab("tickets")}>Ticketek</button>
+                <button className={subTabStyle(userPanelTab === "service")} onClick={() => setUserPanelTab("service")}>Szereltetés</button>
+                <button className={subTabStyle(userPanelTab === "lore")} onClick={() => setUserPanelTab("lore")}>Karaktertörténet</button>
+                <button className={subTabStyle(userPanelTab === "warnings")} onClick={() => setUserPanelTab("warnings")}>Figyelmeztetések</button>
               </div>
 
               {userPanelTab === "osszegzo" && (
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Leadandó</div>
-                    <div className="mt-2 text-lg font-semibold">
-                      Jóváhagyott: {approvedLeadandoCount} / Összes: {leadando.length}
-                    </div>
+                    <div className="mt-2 text-lg font-semibold">Jóváhagyott: {approvedLeadandoCount} / Összes: {leadando.length}</div>
                   </div>
 
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Ticketek</div>
-                    <div className="mt-2 text-lg font-semibold">
-                      Nyitott: {summary?.open_tickets ?? 0} / Összes: {summary?.total_tickets ?? tickets.length}
-                    </div>
+                    <div className="mt-2 text-lg font-semibold">Nyitott: {summary?.open_tickets ?? 0} / Összes: {summary?.total_tickets ?? tickets.length}</div>
                   </div>
 
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Szereltetés</div>
-                    <div className="mt-2 text-lg font-semibold">
-                      Függő: {summary?.pending_service ?? pendingServiceCount} / Összes: {summary?.total_service ?? serviceRequests.length}
-                    </div>
+                    <div className="mt-2 text-lg font-semibold">Függő: {summary?.pending_service ?? pendingServiceCount} / Összes: {summary?.total_service ?? serviceRequests.length}</div>
                   </div>
 
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Figyelmeztetések</div>
                     <div className="mt-2 text-lg font-semibold">{activeWarningsCount}</div>
                   </div>
 
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Karaktertörténet</div>
                     <div className="mt-2 text-lg font-semibold">
-                      {summary?.lore_submitted ? (
-                        <DecisionBadge value={summary?.lore_approved ? "approved" : "pending"} />
-                      ) : (
-                        "Nincs"
-                      )}
+                      {summary?.lore_submitted ? <DecisionBadge value={summary?.lore_approved ? "approved" : "pending"} /> : "Nincs"}
                     </div>
                   </div>
 
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Discord név</div>
-                    <div className="mt-2 text-lg font-semibold">
-                      {summary?.discord_name || selectedUser.discord_name || "—"}
-                    </div>
+                    <div className="mt-2 text-lg font-semibold">{summary?.discord_name || selectedUser.discord_name || "—"}</div>
                   </div>
 
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Fekete lista</div>
                     <div className="mt-2 text-lg font-semibold">{summary?.is_blacklisted ? "Igen" : "Nem"}</div>
                   </div>
 
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Utolsó leadandó</div>
-                    <div className="mt-2 text-lg font-semibold">
-                      {summary?.last_leadando_submitted ? fmt(summary.last_leadando_submitted) : "—"}
+                    <div className="mt-2 text-lg font-semibold">{summary?.last_leadando_submitted ? fmt(summary.last_leadando_submitted) : "—"}</div>
+                  </div>
+
+                  <div className="border border-white/10 rounded-[24px] p-4">
+                    <div className="text-xs opacity-70">Parkolóhelyek</div>
+                    <div className="mt-2 text-sm font-semibold leading-6">
+                      <div>Parkolóház: {(summary?.assigned_garage_slots?.length ?? 0) > 0 ? summary?.assigned_garage_slots?.join(", ") : "—"}</div>
+                      <div>Hangár: {(summary?.assigned_hangar_slots?.length ?? 0) > 0 ? summary?.assigned_hangar_slots?.join(", ") : "—"}</div>
                     </div>
                   </div>
 
-                  <div className="lmr-surface-soft rounded-[24px] p-4">
+                  <div className="border border-white/10 rounded-[24px] p-4">
                     <div className="text-xs opacity-70">Pending esemény értékelések</div>
-                    <div className="mt-2 text-lg font-semibold">
-                      {summary?.pending_event_feedback_count ?? eventFeedbacks.length}
-                    </div>
+                    <div className="mt-2 text-lg font-semibold">{summary?.pending_event_feedback_count ?? eventFeedbacks.length}</div>
                   </div>
                 </div>
               )}
 
               {userPanelTab === "osszegzo" && eventFeedbacks.length > 0 && (
-                <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="border border-white/10 rounded-xl p-4">
                   <div className="text-sm font-semibold">TGF RP értékelések</div>
                   <div className="mt-3 overflow-x-auto rounded border border-white/10">
                     <table className="w-full text-sm">
@@ -1849,24 +2069,28 @@ export default function VezetosegPage() {
               )}
 
               {userPanelTab === "tgf" && (
-                <div className="mt-6 lmr-surface-soft rounded-[26px] p-5 md:p-6">
-                  <div className="text-sm font-semibold">TGF adatok</div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-3">
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm">
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">TGF adatok</h3>
+                    <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-xl border border-white/10 p-3 text-sm">
                       <div className="opacity-70">IC név</div>
                       <div className="mt-1 font-medium">{selectedUser.ic_name || "—"}</div>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm">
+                    <div className="rounded-xl border border-white/10 p-3 text-sm">
                       <div className="opacity-70">Discord név</div>
                       <div className="mt-1 font-medium">{summary?.discord_name || selectedUser.discord_name || "—"}</div>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm">
+                    <div className="rounded-xl border border-white/10 p-3 text-sm">
                       <div className="opacity-70">Felvétel dátuma</div>
                       <div className="mt-1 font-medium">{fmt(summary?.joined_at || selectedUser.created_at || null)}</div>
                     </div>
                   </div>
 
-                  <div className="mt-4">
+                  <div>
                     <div className="flex items-center justify-between gap-3">
                       <label className="block text-sm font-medium">Vezetőségi információk</label>
                       <div className="flex items-center gap-2">
@@ -1896,285 +2120,273 @@ export default function VezetosegPage() {
                     />
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="text-xs opacity-70">
-                      Utolsó frissítés: {fmt(tgfNote?.updated_at || tgfNote?.created_at || null)}
-                    </div>
-                  </div>
+                  <div className="text-xs opacity-70">Utolsó frissítés: {fmt(tgfNote?.updated_at || tgfNote?.created_at || null)}</div>
                 </div>
               )}
 
               {userPanelTab === "leadando" && (
-                <div className="mt-6">
-                  <div className="text-sm font-semibold">Leadandó beküldések</div>
-                  <div className="mt-2 space-y-2">
-                    {leadando.length === 0 ? (
-                      <div className="text-sm opacity-70">Nincs leadandó beküldés.</div>
-                    ) : (
-                      leadando.map((l) => (
-                        <div key={l.id} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Leadandó beküldések</h3>
+                    <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                  </div>
+
+                  {leadando.length === 0 ? (
+                    <div className="text-sm opacity-70">Nincs leadandó beküldés.</div>
+                  ) : (
+                    leadando.map((l) => (
+                      <div key={l.id} className="rounded-xl border border-white/10 p-4 text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="font-medium">Beküldve: {fmt(l.submitted_at)} • Hetek: {l.weeks}</div>
+                            <div className="mt-1 text-xs opacity-70">Állapot: <DecisionBadge value={l.is_approved ? "approved" : "pending"} /></div>
+                            <div className="mt-1 text-xs opacity-70">
+                              Imgur:{" "}
+                              <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(l.imgur_url)}>
+                                {l.imgur_url}
+                              </a>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() =>
+                                approveLeadando(
+                                  l.id,
+                                  !l.is_approved,
+                                  toDateInputValue(l.approved_until || selectedUser?.leadando_due_at || null)
+                                )
+                              }
+                              disabled={!token || busy === `leadando:${l.id}`}
+                              className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                            >
+                              {busy === `leadando:${l.id}` ? "..." : l.is_approved ? "Visszavonás" : "Elfogadás"}
+                            </button>
+
+                            <button
+                              onClick={() => deleteLeadando(l.id)}
+                              disabled={!token || busy === `leadandodel:${l.id}`}
+                              className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                            >
+                              {busy === `leadandodel:${l.id}` ? "..." : "Törlés"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {userPanelTab === "tickets" && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Ticketek</h3>
+                    <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                  </div>
+
+                  {tickets.length === 0 ? (
+                    <div className="text-sm opacity-70">Nincs ticket.</div>
+                  ) : (
+                    tickets.map((t) => {
+                      const imgurUrl = getTicketImgurUrl(t);
+                      const sanctionReason = (t.sanction_reason || t.payload?.reason || "").toString().trim();
+                      const normalizedStatus = normalizeTicketDecisionStatus(t.status);
+
+                      return (
+                        <div key={t.id} className="rounded-xl border border-white/10 p-4 text-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium">{t.title || "Ticket"} • {ticketTypeLabel(t)}</div>
+                              <div className="mt-1 text-xs opacity-70 whitespace-pre-wrap">{t.description || "—"}</div>
+
+                              <div className="mt-3 grid gap-2 text-xs text-white/75 md:grid-cols-2">
+                                <div className="rounded-lg border border-white/10 px-3 py-2">
+                                  <span className="text-white/45">Állapot:</span>{" "}
+                                  <span className="font-medium text-white">{prettyTicketDecision(t.status)}</span>
+                                </div>
+                                <div className="rounded-lg border border-white/10 px-3 py-2">
+                                  <span className="text-white/45">Létrehozva:</span>{" "}
+                                  <span className="font-medium text-white">{fmt(t.created_at)}</span>
+                                </div>
+
+                                {imgurUrl ? (
+                                  <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2">
+                                    <span className="text-white/45">Imgur:</span>{" "}
+                                    <a className="underline text-white" target="_blank" rel="noreferrer" href={normalizeUrl(imgurUrl)}>
+                                      {imgurUrl}
+                                    </a>
+                                  </div>
+                                ) : null}
+
+                                {sanctionReason ? (
+                                  <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2">
+                                    <span className="text-white/45">Indok:</span>{" "}
+                                    <span className="text-white">{sanctionReason}</span>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => updateTicketStatus(t.id, "approved")}
+                                disabled={!token || busy === `ticket:${t.id}` || normalizedStatus !== "pending"}
+                                className="rounded-2xl border border-emerald-400/20 bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                              >
+                                {busy === `ticket:${t.id}` && normalizedStatus === "pending" ? "..." : "Elfogadás"}
+                              </button>
+
+                              <button
+                                onClick={() => updateTicketStatus(t.id, "rejected")}
+                                disabled={!token || busy === `ticket:${t.id}` || normalizedStatus !== "pending"}
+                                className="rounded-2xl border border-yellow-400/20 bg-yellow-600 px-3 py-2 text-xs font-semibold text-white hover:bg-yellow-500 disabled:opacity-50"
+                              >
+                                {busy === `ticket:${t.id}` && normalizedStatus === "pending" ? "..." : "Elutasítás"}
+                              </button>
+
+                              <button
+                                onClick={() => deleteTicket(t.id)}
+                                disabled={!token || busy === `ticketdel:${t.id}`}
+                                className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                              >
+                                {busy === `ticketdel:${t.id}` ? "..." : "Törlés"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {userPanelTab === "service" && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Szereltetés igénylések</h3>
+                    <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                  </div>
+
+                  {serviceRequests.length === 0 ? (
+                    <div className="text-sm opacity-70">Nincs szereltetés igénylés.</div>
+                  ) : (
+                    serviceRequests.map((s) => (
+                      <div key={s.id} className="rounded-xl border border-white/10 p-4 text-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium">{s.vehicle_type || "—"} • {s.plate || "—"}</div>
+
+                            <div className="mt-3 grid gap-2 text-xs text-white/75 md:grid-cols-2">
+                              <div className="rounded-lg border border-white/10 px-3 py-2"><span className="text-white/45">Esemény:</span> <span className="text-white">{s.event_name || "—"}</span></div>
+                              <div className="rounded-lg border border-white/10 px-3 py-2"><span className="text-white/45">Összeg:</span> <span className="text-white">{formatMoney(s.amount)}</span></div>
+                              <div className="rounded-lg border border-white/10 px-3 py-2"><span className="text-white/45">Státusz:</span> <span className="text-white">{s.status}</span></div>
+                              <div className="rounded-lg border border-white/10 px-3 py-2"><span className="text-white/45">Létrehozva:</span> <span className="text-white">{fmt(s.created_at)}</span></div>
+                              <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2"><span className="text-white/45">Elbírálva:</span> <span className="text-white">{fmt(s.reviewed_at)}</span></div>
+
+                              {s.imgur_url ? (
+                                <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2">
+                                  <span className="text-white/45">Imgur:</span>{" "}
+                                  <a className="underline text-white" target="_blank" rel="noreferrer" href={normalizeUrl(s.imgur_url)}>
+                                    Megnyitás
+                                  </a>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            {s.description ? (
+                              <div className="mt-3 whitespace-pre-wrap text-xs opacity-65">{s.description}</div>
+                            ) : null}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => approveServiceRequest(s.id)}
+                              disabled={!token || s.status === "approved" || busy === `service:${s.id}`}
+                              className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                            >
+                              {busy === `service:${s.id}` ? "..." : s.status === "approved" ? "Elfogadva" : "Elfogadás"}
+                            </button>
+
+                            <button
+                              onClick={() => deleteServiceRequest(s.id)}
+                              disabled={!token || busy === `servicedel:${s.id}`}
+                              className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                            >
+                              {busy === `servicedel:${s.id}` ? "..." : "Törlés"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {userPanelTab === "lore" && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Karaktertörténet leadások</h3>
+                    <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                  </div>
+
+                  {lore.length === 0 ? (
+                    <div className="text-sm opacity-70">Nincs karaktertörténet leadva.</div>
+                  ) : (
+                    lore.map((l) => {
+                      const loreLink = l.pastebin_url || l.lore_url;
+
+                      return (
+                        <div key={l.id} className="rounded-xl border border-white/10 p-4 text-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-4">
                             <div>
-                              <div className="font-medium">
-                                Beküldve: {fmt(l.submitted_at)} • Hetek: {l.weeks}
-                              </div>
+                              <div className="font-medium">Beküldve: {fmt(l.submitted_at)} • Állapot: <DecisionBadge value={l.is_approved ? "approved" : "pending"} /></div>
+                              {l.discord_name ? <div className="mt-1 text-xs opacity-70">Discord név: {l.discord_name}</div> : null}
                               <div className="mt-1 text-xs opacity-70">
-                                Állapot: <DecisionBadge value={l.is_approved ? "approved" : "pending"} />
-                              </div>
-                              <div className="mt-1 text-xs opacity-70">
-                                Imgur:{" "}
-                                <a
-                                  className="underline"
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  href={normalizeUrl(l.imgur_url)}
-                                >
-                                  {l.imgur_url}
+                                Link:{" "}
+                                <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(loreLink)}>
+                                  {loreLink}
                                 </a>
                               </div>
                             </div>
 
                             <div className="flex items-center gap-2">
                               <button
-                                onClick={() =>
-                                  approveLeadando(
-                                    l.id,
-                                    !l.is_approved,
-                                    toDateInputValue(l.approved_until || selectedUser?.leadando_due_at || null)
-                                  )
-                                }
-                                disabled={!token || busy === `leadando:${l.id}`}
+                                onClick={() => approveLoreSubmission(l.id, !l.is_approved)}
+                                disabled={!token || busy === `lore:${l.id}:approve` || busy === `lore:${l.id}:revoke`}
                                 className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                               >
-                                {busy === `leadando:${l.id}` ? "..." : l.is_approved ? "Visszavonás" : "Elfogadás"}
+                                {busy === `lore:${l.id}:approve` || busy === `lore:${l.id}:revoke`
+                                  ? "..."
+                                  : l.is_approved
+                                    ? "Elfogadás visszavonása"
+                                    : "Elfogadás"}
                               </button>
 
                               <button
-                                onClick={() => deleteLeadando(l.id)}
-                                disabled={!token || busy === `leadandodel:${l.id}`}
+                                onClick={() => deleteLoreSubmission(l.id)}
+                                disabled={!token || busy === `loredel:${l.id}`}
                                 className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                               >
-                                {busy === `leadandodel:${l.id}` ? "..." : "Törlés"}
+                                {busy === `loredel:${l.id}` ? "..." : "Törlés"}
                               </button>
                             </div>
                           </div>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {userPanelTab === "tickets" && (
-                <div className="mt-6">
-                  <div className="text-sm font-semibold">Ticketek</div>
-                  <div className="mt-2 space-y-2">
-                    {tickets.length === 0 ? (
-                      <div className="text-sm opacity-70">Nincs ticket.</div>
-                    ) : (
-                      tickets.map((t) => {
-                        const imgurUrl = getTicketImgurUrl(t);
-                        const sanctionReason = (t.sanction_reason || t.payload?.reason || "").toString().trim();
-
-                        return (
-                          <div key={t.id} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
-                            <div className="flex flex-wrap items-start justify-between gap-4">
-                              <div>
-                                <div className="font-medium">
-                                  {t.title || "Ticket"} • {ticketTypeLabel(t)}
-                                </div>
-                                <div className="mt-1 text-xs opacity-70 whitespace-pre-wrap">{t.description || "—"}</div>
-                                <div className="mt-1 text-xs opacity-70">
-                                  Státusz: {t.status} • Létrehozva: {fmt(t.created_at)}
-                                </div>
-
-                                {imgurUrl && (
-                                  <div className="mt-2 text-xs opacity-80">
-                                    Imgur:{" "}
-                                    <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(imgurUrl)}>
-                                      {imgurUrl}
-                                    </a>
-                                  </div>
-                                )}
-
-                                {sanctionReason && (
-                                  <div className="mt-2 text-xs opacity-80">
-                                    Indok: <span className="opacity-90">{sanctionReason}</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={t.status}
-                                  onChange={(e) => updateTicketStatus(t.id, e.target.value)}
-                                  disabled={!token || busy === `ticket:${t.id}`}
-                                  className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs"
-                                >
-                                  <option value="open">open</option>
-                                  <option value="in_progress">in_progress</option>
-                                  <option value="closed">closed</option>
-                                </select>
-
-                                <button
-                                  onClick={() => deleteTicket(t.id)}
-                                  disabled={!token || busy === `ticketdel:${t.id}`}
-                                  className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                                >
-                                  {busy === `ticketdel:${t.id}` ? "..." : "Törlés"}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {userPanelTab === "service" && (
-                <div className="mt-6">
-                  <div className="text-sm font-semibold">Szereltetés igénylések</div>
-                  <div className="mt-2 space-y-2">
-                    {serviceRequests.length === 0 ? (
-                      <div className="text-sm opacity-70">Nincs szereltetés igénylés.</div>
-                    ) : (
-                      serviceRequests.map((s) => (
-                        <div key={s.id} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
-                          <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <div className="font-medium">
-                                {s.vehicle_type || "—"} • {s.plate || "—"}
-                              </div>
-
-                              <div className="mt-2 grid gap-2 text-xs opacity-80">
-                                <div>
-                                  <span className="opacity-60">Esemény:</span> {s.event_name || "—"}
-                                </div>
-                                <div>
-                                  <span className="opacity-60">Összeg:</span> {formatMoney(s.amount)}
-                                </div>
-                                <div>
-                                  <span className="opacity-60">Státusz:</span> {s.status}
-                                </div>
-                                <div>
-                                  <span className="opacity-60">Létrehozva:</span> {fmt(s.created_at)}
-                                </div>
-                                <div>
-                                  <span className="opacity-60">Elbírálva:</span> {fmt(s.reviewed_at)}
-                                </div>
-
-                                {s.imgur_url && (
-                                  <div>
-                                    <span className="opacity-60">Imgur:</span>{" "}
-                                    <a
-                                      className="underline"
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      href={normalizeUrl(s.imgur_url)}
-                                    >
-                                      Megnyitás
-                                    </a>
-                                  </div>
-                                )}
-                              </div>
-
-                              {s.description && (
-                                <div className="mt-3 whitespace-pre-wrap text-xs opacity-65">
-                                  {s.description}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => approveServiceRequest(s.id)}
-                                disabled={!token || s.status === "approved" || busy === `service:${s.id}`}
-                                className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                              >
-                                {busy === `service:${s.id}` ? "..." : s.status === "approved" ? "Elfogadva" : "Elfogadás"}
-                              </button>
-
-                              <button
-                                onClick={() => deleteServiceRequest(s.id)}
-                                disabled={!token || busy === `servicedel:${s.id}`}
-                                className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                              >
-                                {busy === `servicedel:${s.id}` ? "..." : "Törlés"}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {userPanelTab === "lore" && (
-                <div className="mt-6">
-                  <div className="text-sm font-semibold">Karaktertörténet leadások</div>
-                  <div className="mt-2 space-y-2">
-                    {lore.length === 0 ? (
-                      <div className="text-sm opacity-70">Nincs karaktertörténet leadva.</div>
-                    ) : (
-                      lore.map((l) => {
-                        const loreLink = l.pastebin_url || l.lore_url;
-
-                        return (
-                          <div key={l.id} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
-                            <div className="flex flex-wrap items-start justify-between gap-4">
-                              <div>
-                                <div className="font-medium">
-                                  Beküldve: {fmt(l.submitted_at)} • Állapot:{" "}
-                                  <DecisionBadge value={l.is_approved ? "approved" : "pending"} />
-                                </div>
-                                {l.discord_name ? (
-                                  <div className="mt-1 text-xs opacity-70">Discord név: {l.discord_name}</div>
-                                ) : null}
-                                <div className="mt-1 text-xs opacity-70">
-                                  Link:{" "}
-                                  <a className="underline" target="_blank" rel="noreferrer" href={normalizeUrl(loreLink)}>
-                                    {loreLink}
-                                  </a>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => approveLoreSubmission(l.id, !l.is_approved)}
-                                  disabled={!token || busy === `lore:${l.id}:approve` || busy === `lore:${l.id}:revoke`}
-                                  className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                                >
-                                  {busy === `lore:${l.id}:approve` || busy === `lore:${l.id}:revoke`
-                                    ? "..."
-                                    : l.is_approved
-                                      ? "Elfogadás visszavonása"
-                                      : "Elfogadás"}
-                                </button>
-
-                                <button
-                                  onClick={() => deleteLoreSubmission(l.id)}
-                                  disabled={!token || busy === `loredel:${l.id}`}
-                                  className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                                >
-                                  {busy === `loredel:${l.id}` ? "..." : "Törlés"}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
 
               {userPanelTab === "warnings" && (
-                <div className="mt-6">
+                <div className="space-y-4">
                   <div className="flex items-center gap-2">
-                    <div className="text-sm font-semibold">Figyelmeztetések</div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">Figyelmeztetések</h3>
+                      <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+                    </div>
+
                     <button
                       onClick={createWarning}
                       disabled={!token || busy === `warncreate:${selectedUser.user_id}`}
@@ -2184,52 +2396,50 @@ export default function VezetosegPage() {
                     </button>
                   </div>
 
-                  <div className="mt-2 space-y-2">
-                    {warnings.length === 0 ? (
-                      <div className="text-sm opacity-70">Nincs figyelmeztetés.</div>
-                    ) : (
-                      warnings.map((w) => (
-                        <div key={w.id} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
-                          <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div>
-                              <div className="font-medium">{w.reason}</div>
-                              <div className="mt-1 text-xs opacity-70">
-                                Kiállítva: {fmt(w.issued_at)} • Lejár: {fmt(w.expires_at)} • Állapot: {w.is_active ? "Aktív" : "Inaktív"}
-                              </div>
-                              <div className="mt-1 text-xs opacity-70">
-                                Kiállította: {w.issued_by ? nameMap.get(w.issued_by) || w.issued_by : "—"}
-                              </div>
+                  {warnings.length === 0 ? (
+                    <div className="text-sm opacity-70">Nincs figyelmeztetés.</div>
+                  ) : (
+                    warnings.map((w) => (
+                      <div key={w.id} className="rounded-xl border border-white/10 p-4 text-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <div className="font-medium">{w.reason}</div>
+                            <div className="mt-1 text-xs opacity-70">
+                              Kiállítva: {fmt(w.issued_at)} • Lejár: {fmt(w.expires_at)} • Állapot: {w.is_active ? "Aktív" : "Inaktív"}
                             </div>
-
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => deleteWarning(w.id)}
-                                disabled={!token || busy === `warndel:${w.id}`}
-                                className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                              >
-                                {busy === `warndel:${w.id}` ? "..." : "Törlés"}
-                              </button>
+                            <div className="mt-1 text-xs opacity-70">
+                              Kiállította: {w.issued_by ? nameMap.get(w.issued_by) || w.issued_by : "—"}
                             </div>
                           </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => deleteWarning(w.id)}
+                              disabled={!token || busy === `warndel:${w.id}`}
+                              className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                            >
+                              {busy === `warndel:${w.id}` ? "..." : "Törlés"}
+                            </button>
+                          </div>
                         </div>
-                      ))
-                    )}
-                  </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </div>
           )}
-        </div>
+        </section>
       )}
 
       {tab === "leadandok" && (
-        <div className="mt-6">
+        <section className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-lg font-semibold">Leadandók</div>
-              <div className="mt-1 text-sm opacity-70">
+              <h2 className="text-xl font-semibold text-white">Leadandók</h2>
+              <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+              <div className="mt-4 text-sm text-white/70">
                 Az összes aktív és vezetőségi tag egy helyen, rang prioritás szerint rendezve.
-                Innen közvetlenül megnyitható a bizonyíték és elfogadható a leadandó.
               </div>
             </div>
             <button
@@ -2241,7 +2451,7 @@ export default function VezetosegPage() {
             </button>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-[24px] border border-white/10">
+          <div className="overflow-x-auto rounded-[24px] border border-white/10">
             <table className="w-full text-sm">
               <thead className="bg-white/5">
                 <tr className="text-left">
@@ -2259,38 +2469,26 @@ export default function VezetosegPage() {
               <tbody>
                 {leadandoDashboardRows.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-3 opacity-70" colSpan={8}>
-                      Nincs megjeleníthető tag.
-                    </td>
+                    <td className="px-3 py-3 opacity-70" colSpan={8}>Nincs megjeleníthető tag.</td>
                   </tr>
                 ) : (
                   leadandoDashboardRows.map((row) => {
                     const submission = row.latest_submission;
                     const deadlineDraft = leadandoDeadlineDrafts[row.user_id] ?? "";
-                    const statusLabel = submission
-                      ? submission.is_approved
-                        ? "approved"
-                        : "pending"
-                      : "pending";
+                    const statusLabel = submission ? (submission.is_approved ? "approved" : "pending") : "pending";
 
                     return (
                       <tr key={row.user_id} className="border-t border-white/10">
                         <td className="px-3 py-2 font-medium">{row.ic_name || "—"}</td>
-                        <td className="px-3 py-2">
-                          {row.rank_name ? <RankBadge name={row.rank_name} /> : "—"}
-                        </td>
+                        <td className="px-3 py-2">{row.rank_name ? <RankBadge name={row.rank_name} /> : "—"}</td>
                         <td className="px-3 py-2">{submission ? fmt(submission.submitted_at) : "—"}</td>
-                        <td className="px-3 py-2">
-                          {submission ? <DecisionBadge value={statusLabel} /> : "Nincs leadandó"}
-                        </td>
+                        <td className="px-3 py-2">{submission ? <DecisionBadge value={statusLabel} /> : "Nincs leadandó"}</td>
                         <td className="px-3 py-2">
                           {submission?.imgur_url ? (
                             <a className="underline underline-offset-4" target="_blank" rel="noreferrer" href={normalizeUrl(submission.imgur_url)}>
                               Megnyitás
                             </a>
-                          ) : (
-                            "—"
-                          )}
+                          ) : "—"}
                         </td>
                         <td className="px-3 py-2">{submission ? `${submission.weeks} hét` : "—"}</td>
                         <td className="px-3 py-2">
@@ -2346,9 +2544,7 @@ export default function VezetosegPage() {
                         </td>
                         <td className="px-3 py-2">
                           <button
-                            onClick={() =>
-                              submission && approveLeadando(submission.id, !submission.is_approved, deadlineDraft || null)
-                            }
+                            onClick={() => submission && approveLeadando(submission.id, !submission.is_approved, deadlineDraft || null)}
                             disabled={!token || !submission || busy === `leadando:${submission?.id}` || (!submission?.is_approved && !deadlineDraft)}
                             className="rounded-2xl border border-red-400/20 bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                           >
@@ -2362,19 +2558,20 @@ export default function VezetosegPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
 
       {tab === "kerdoivek" && (
-        <div className="mt-6">
+        <section className="space-y-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-lg font-semibold">Beérkezett ügyek</div>
-              <div className="mt-1 text-sm opacity-70">
-                A még kezelést igénylő ticketek, leadandók, szereltetés igénylések és karaktertörténetek,
-                beérkezési sorrendben.
+              <h2 className="text-xl font-semibold text-white">Beérkezett ügyek</h2>
+              <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+              <div className="mt-4 text-sm text-white/70">
+                A még kezelést igénylő ticketek, leadandók, szereltetés igénylések, parkolás igénylések és karaktertörténetek.
               </div>
             </div>
+
             <button
               onClick={loadUnifiedInbox}
               disabled={!token || busy === "leadando:inbox"}
@@ -2384,114 +2581,266 @@ export default function VezetosegPage() {
             </button>
           </div>
 
-          <div className="mt-4 space-y-2">
+          <div className="space-y-3">
             {unifiedInbox.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm opacity-70">
-                Még nincs beérkezett ügy.
-              </div>
+              <div className="rounded-xl border border-white/10 p-4 text-sm opacity-70">Még nincs beérkezett ügy.</div>
             ) : (
               unifiedInbox.map((row) => (
                 <div
                   key={`${row.inbox_type}:${row.id}`}
-                  className="lmr-surface-soft cursor-pointer rounded-[24px] p-4 transition hover:bg-white/[0.04]"
+                  className="cursor-pointer rounded-[24px] border border-white/10 p-4 transition hover:bg-white/[0.04]"
                   onClick={() => void openInboxItem(row)}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="font-medium">{row.profile?.ic_name || "—"}</div>
-                      <div className="mt-1 text-xs opacity-70">
-                        Típus:{" "}
-                        {row.inbox_type === "leadando"
-                          ? "Leadandó"
-                          : row.inbox_type === "ticket"
-                            ? "Ticket"
-                            : row.inbox_type === "service"
-                              ? "Szereltetés igénylés"
-                              : "Karaktertörténet"}
-                      </div>
-                      <div className="mt-1 text-xs opacity-70">
-                        Beérkezett: {fmt(row.submitted_at)}
-                        {row.status_label ? " • Állapot: " : ""}
-                        {row.status_label ? (
-                          <span className="align-middle">
-                            <DecisionBadge value={row.status_label} />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-white">{row.profile?.ic_name || "—"}</div>
+
+                      <div className="mt-3 grid gap-2 text-xs text-white/75 md:grid-cols-2 xl:grid-cols-3">
+                        <div className="rounded-lg border border-white/10 px-3 py-2">
+                          <span className="text-white/45">Típus:</span>{" "}
+                          <span className="text-white">
+                            {row.inbox_type === "leadando"
+                              ? "Leadandó"
+                              : row.inbox_type === "ticket"
+                                ? "Ticket"
+                                : row.inbox_type === "service"
+                                  ? "Szereltetés igénylés"
+                                  : row.inbox_type === "parking"
+                                    ? "Parkolás igénylés"
+                                    : "Karaktertörténet"}
                           </span>
+                        </div>
+
+                        <div className="rounded-lg border border-white/10 px-3 py-2">
+                          <span className="text-white/45">Beérkezett:</span>{" "}
+                          <span className="text-white">{fmt(row.submitted_at)}</span>
+                        </div>
+
+                        <div className="rounded-lg border border-white/10 px-3 py-2">
+                          <span className="text-white/45">Állapot:</span>{" "}
+                          {row.status_label ? <DecisionBadge value={row.status_label} /> : <span className="text-white">—</span>}
+                        </div>
+
+                        <div className="rounded-lg border border-white/10 px-3 py-2">
+                          <span className="text-white/45">Profil státusz:</span>{" "}
+                          <span className="text-white">{prettyStatus(row.profile?.status)}</span>
+                        </div>
+
+                        <div className="rounded-lg border border-white/10 px-3 py-2">
+                          <span className="text-white/45">Discord:</span>{" "}
+                          <span className="text-white">{row.profile?.discord_name || "—"}</span>
+                        </div>
+
+                        <div className="rounded-lg border border-white/10 px-3 py-2">
+                          <span className="text-white/45">Cím:</span>{" "}
+                          <span className="text-white">{row.title || "—"}</span>
+                        </div>
+
+                        {row.subtitle ? (
+                          <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2 xl:col-span-3">
+                            <span className="text-white/45">Részlet:</span>{" "}
+                            <span className="text-white">{row.subtitle}</span>
+                          </div>
+                        ) : null}
+
+                        {row.profile?.rank_id ? (
+                          <div className="rounded-lg border border-white/10 px-3 py-2">
+                            <span className="text-white/45">Rang:</span>{" "}
+                            <span className="inline-block align-middle">
+                              <RankBadge name={getRankName(row.profile.rank_id)!} />
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {row.leadando?.imgur_url ? (
+                          <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2 xl:col-span-3">
+                            <span className="text-white/45">Imgur:</span>{" "}
+                            <a
+                              className="underline text-white"
+                              target="_blank"
+                              rel="noreferrer"
+                              href={normalizeUrl(row.leadando.imgur_url)}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {row.leadando.imgur_url}
+                            </a>
+                          </div>
+                        ) : null}
+
+                        {row.service?.imgur_url ? (
+                          <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2 xl:col-span-3">
+                            <span className="text-white/45">Imgur:</span>{" "}
+                            <a
+                              className="underline text-white"
+                              target="_blank"
+                              rel="noreferrer"
+                              href={normalizeUrl(row.service.imgur_url)}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {row.service.imgur_url}
+                            </a>
+                          </div>
+                        ) : null}
+
+                        {row.parking_request ? (
+                          <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2 xl:col-span-3">
+                            <span className="text-white/45">Kért helyek:</span>{" "}
+                            <span className="text-white">
+                              {[Array.isArray(row.parking_request.garage_slots) && row.parking_request.garage_slots.length > 0 ? `Parkolóház: ${row.parking_request.garage_slots.join(", ")}` : null,
+                                Array.isArray(row.parking_request.hangar_slots) && row.parking_request.hangar_slots.length > 0 ? `Hangár: ${row.parking_request.hangar_slots.join(", ")}` : null]
+                                .filter(Boolean)
+                                .join(" • ") || "—"}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {row.lore?.lore_url ? (
+                          <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2 xl:col-span-3">
+                            <span className="text-white/45">Link:</span>{" "}
+                            <a
+                              className="underline text-white"
+                              target="_blank"
+                              rel="noreferrer"
+                              href={normalizeUrl(row.lore.lore_url)}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {row.lore.lore_url}
+                            </a>
+                          </div>
                         ) : null}
                       </div>
-                      <div className="mt-1 text-xs opacity-70">
-                        Státusz: {prettyStatus(row.profile?.status)}
-                      </div>
-                      {row.profile?.rank_id ? (
-                        <div className="mt-2">
-                          <RankBadge name={getRankName(row.profile.rank_id)} />
-                        </div>
-                      ) : null}
-                      {row.title ? <div className="mt-1 text-xs opacity-70">Cím: {row.title}</div> : null}
-                      {row.subtitle ? <div className="mt-1 text-xs opacity-70">Részlet: {row.subtitle}</div> : null}
-                      <div className="mt-1 text-xs opacity-70">Discord: {row.profile?.discord_name || "—"}</div>
-
-                      {row.leadando?.imgur_url ? (
-                        <div className="mt-2 text-xs opacity-80">
-                          Imgur:{" "}
-                          <a
-                            className="underline"
-                            target="_blank"
-                            rel="noreferrer"
-                            href={normalizeUrl(row.leadando.imgur_url)}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {row.leadando.imgur_url}
-                          </a>
-                        </div>
-                      ) : null}
-
-                      {row.service?.imgur_url ? (
-                        <div className="mt-2 text-xs opacity-80">
-                          Imgur:{" "}
-                          <a
-                            className="underline"
-                            target="_blank"
-                            rel="noreferrer"
-                            href={normalizeUrl(row.service.imgur_url)}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {row.service.imgur_url}
-                          </a>
-                        </div>
-                      ) : null}
-
-                      {row.lore?.lore_url ? (
-                        <div className="mt-2 text-xs opacity-80">
-                          Link:{" "}
-                          <a
-                            className="underline"
-                            target="_blank"
-                            rel="noreferrer"
-                            href={normalizeUrl(row.lore.lore_url)}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {row.lore.lore_url}
-                          </a>
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </section>
+      )}
+
+      {tab === "parking" && (
+        <section className="space-y-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold text-white">Parkolás igénylések</h2>
+              <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+              <div className="mt-4 text-sm text-white/70">
+                A felhasználók által beküldött parkolás igénylések. Elfogadás után a parkolóhelyek automatikusan kiosztásra kerülnek.
+              </div>
+            </div>
+
+            <button
+              onClick={loadParkingRequests}
+              disabled={!token || busy === "parking:refresh"}
+              className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15 disabled:opacity-50"
+            >
+              Frissítés
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {parkingRequests.length === 0 ? (
+              <div className="rounded-xl border border-white/10 p-4 text-sm opacity-70">Még nincs parkolás igénylés.</div>
+            ) : (
+              parkingRequests.map((row) => {
+                const requestStatus = (row.status || "").toLowerCase();
+                const canReview = requestStatus === "pending";
+
+                return (
+                  <div key={row.id} className="rounded-[24px] border border-white/10 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-white">{row.profile?.ic_name || "—"}</div>
+
+                        <div className="mt-3 grid gap-2 text-xs text-white/75 md:grid-cols-2 xl:grid-cols-3">
+                          <div className="rounded-lg border border-white/10 px-3 py-2">
+                            <span className="text-white/45">Állapot:</span>{" "}
+                            <span className="inline-block align-middle"><DecisionBadge value={requestStatus || "pending"} /></span>
+                          </div>
+                          <div className="rounded-lg border border-white/10 px-3 py-2">
+                            <span className="text-white/45">Beküldve:</span>{" "}
+                            <span className="text-white">{fmt(row.created_at)}</span>
+                          </div>
+                          <div className="rounded-lg border border-white/10 px-3 py-2">
+                            <span className="text-white/45">Frissítve:</span>{" "}
+                            <span className="text-white">{fmt(row.updated_at)}</span>
+                          </div>
+                          <div className="rounded-lg border border-white/10 px-3 py-2">
+                            <span className="text-white/45">Discord:</span>{" "}
+                            <span className="text-white">{row.profile?.discord_name || "—"}</span>
+                          </div>
+                          <div className="rounded-lg border border-white/10 px-3 py-2">
+                            <span className="text-white/45">Profil státusz:</span>{" "}
+                            <span className="text-white">{prettyStatus(row.profile?.status)}</span>
+                          </div>
+                          {row.profile?.rank_id ? (
+                            <div className="rounded-lg border border-white/10 px-3 py-2">
+                              <span className="text-white/45">Rang:</span>{" "}
+                              <span className="inline-block align-middle"><RankBadge name={getRankName(row.profile.rank_id)!} /></span>
+                            </div>
+                          ) : null}
+                          <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2 xl:col-span-3">
+                            <span className="text-white/45">Parkolóház:</span>{" "}
+                            <span className="text-white">{Array.isArray(row.garage_slots) && row.garage_slots.length > 0 ? row.garage_slots.join(", ") : "—"}</span>
+                          </div>
+                          <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2 xl:col-span-3">
+                            <span className="text-white/45">Hangár:</span>{" "}
+                            <span className="text-white">{Array.isArray(row.hangar_slots) && row.hangar_slots.length > 0 ? row.hangar_slots.join(", ") : "—"}</span>
+                          </div>
+                          {row.review_note ? (
+                            <div className="rounded-lg border border-white/10 px-3 py-2 md:col-span-2 xl:col-span-3">
+                              <span className="text-white/45">Megjegyzés:</span>{" "}
+                              <span className="text-white">{row.review_note}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => reviewParkingRequest(row.id, true)}
+                          disabled={!token || !canReview || busy === `parking:${row.id}`}
+                          className="rounded-2xl border border-emerald-400/20 bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                        >
+                          {busy === `parking:${row.id}` && canReview ? "..." : "Elfogadás"}
+                        </button>
+
+                        <button
+                          onClick={() => reviewParkingRequest(row.id, false)}
+                          disabled={!token || !canReview || busy === `parking:${row.id}`}
+                          className="rounded-2xl border border-yellow-400/20 bg-yellow-600 px-3 py-2 text-xs font-semibold text-white hover:bg-yellow-500 disabled:opacity-50"
+                        >
+                          {busy === `parking:${row.id}` && canReview ? "..." : "Elutasítás"}
+                        </button>
+
+                        <button
+                          onClick={() => deleteParkingRequest(row.id)}
+                          disabled={!token || busy === `parkingdel:${row.id}`}
+                          className="rounded-2xl border border-red-400/20 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                        >
+                          {busy === `parkingdel:${row.id}` ? "..." : "Törlés"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
       )}
 
       {tab === "tgf" && (
-        <div className="mt-6">
+        <section className="space-y-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-lg font-semibold">TGF</div>
-              <div className="mt-1 text-sm opacity-70">
-                Csak a pending státuszú felhasználók jelennek meg itt. A mentett információk az adatlapjukon később is megmaradnak.
+              <h2 className="text-xl font-semibold text-white">TGF</h2>
+              <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+              <div className="mt-4 text-sm text-white/70">
+                Csak a pending státuszú felhasználók jelennek meg itt.
               </div>
             </div>
+
             <button
               onClick={loadTgfRows}
               disabled={!token || busy === "tgf:refresh"}
@@ -2501,14 +2850,12 @@ export default function VezetosegPage() {
             </button>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="space-y-3">
             {tgfRows.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm opacity-70">
-                Jelenleg nincs pending státuszú felhasználó.
-              </div>
+              <div className="rounded-xl border border-white/10 p-4 text-sm opacity-70">Jelenleg nincs pending státuszú felhasználó.</div>
             ) : (
               tgfRows.map((row) => (
-                <details key={row.profile.user_id} className="lmr-surface-soft rounded-[24px] p-4">
+                <details key={row.profile.user_id} className="rounded-[24px] border border-white/10 p-4">
                   <summary className="cursor-pointer list-none">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
@@ -2547,6 +2894,7 @@ export default function VezetosegPage() {
                           </button>
                         </div>
                       </div>
+
                       <textarea
                         className="mt-2 min-h-[160px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm outline-none disabled:opacity-70"
                         value={tgfDrafts[row.profile.user_id] ?? ""}
@@ -2554,9 +2902,8 @@ export default function VezetosegPage() {
                         placeholder="Ide írhatók a pending / TGF felhasználóval kapcsolatos információk..."
                         disabled={!tgfEditingRows[row.profile.user_id]}
                       />
-                      <div className="mt-2 text-xs opacity-70">
-                        Utolsó frissítés: {fmt(row.tgf_note?.updated_at || row.tgf_note?.created_at || null)}
-                      </div>
+
+                      <div className="mt-2 text-xs opacity-70">Utolsó frissítés: {fmt(row.tgf_note?.updated_at || row.tgf_note?.created_at || null)}</div>
                     </div>
 
                     <div className="flex flex-col gap-2 md:w-48">
@@ -2576,25 +2923,24 @@ export default function VezetosegPage() {
               ))
             )}
           </div>
-        </div>
+        </section>
       )}
 
       {tab === "blacklist" && (
-        <div className="mt-6">
-          <div className="lmr-surface-soft rounded-[26px] p-5 md:p-6">
+        <section className="space-y-5">
+          <div>
+            <h2 className="text-xl font-semibold text-white">Fekete lista</h2>
+            <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+          </div>
+
+          <div className="border border-white/10 rounded-[26px] p-5 md:p-6">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="text-lg font-semibold">Fekete lista</div>
+              <div className="text-lg font-semibold">Új blacklist bejegyzés</div>
               <div className="ml-auto flex gap-2">
-                <button
-                  className={tabBtnStyle(blacklistMode === "existing")}
-                  onClick={() => setBlacklistMode("existing")}
-                >
+                <button className={tabBtnStyle(blacklistMode === "existing")} onClick={() => setBlacklistMode("existing")}>
                   Regisztrált felhasználó
                 </button>
-                <button
-                  className={tabBtnStyle(blacklistMode === "manual")}
-                  onClick={() => setBlacklistMode("manual")}
-                >
+                <button className={tabBtnStyle(blacklistMode === "manual")} onClick={() => setBlacklistMode("manual")}>
                   Manuális felvétel
                 </button>
               </div>
@@ -2615,17 +2961,17 @@ export default function VezetosegPage() {
                   >
                     <option value="">Válassz felhasználót...</option>
                     {selectableBlacklistUsers.map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.ic_name || "—"}
-                      </option>
+                      <option key={m.user_id} value={m.user_id}>{m.ic_name || "—"}</option>
                     ))}
                   </select>
+
                   <input
                     value={blacklistReason}
                     onChange={(e) => setBlacklistReason(e.target.value)}
                     placeholder="Fekete lista oka"
                     className="rounded-2xl border px-3.5 py-3 text-sm"
                   />
+
                   <button
                     onClick={createBlacklistEntry}
                     disabled={!token || !blacklistSelectedUserId || !blacklistReason.trim() || busy === "blacklist:create"}
@@ -2666,7 +3012,7 @@ export default function VezetosegPage() {
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-[24px] border border-white/10">
+          <div className="overflow-x-auto rounded-[24px] border border-white/10">
             <table className="w-full text-sm">
               <thead className="bg-white/5">
                 <tr className="text-left">
@@ -2680,9 +3026,7 @@ export default function VezetosegPage() {
               <tbody>
                 {blacklist.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-3 opacity-70" colSpan={5}>
-                      Nincs fekete listás bejegyzés.
-                    </td>
+                    <td className="px-3 py-3 opacity-70" colSpan={5}>Nincs fekete listás bejegyzés.</td>
                   </tr>
                 ) : (
                   blacklist.map((row) => (
@@ -2706,7 +3050,7 @@ export default function VezetosegPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

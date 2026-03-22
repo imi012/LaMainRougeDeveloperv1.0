@@ -9,8 +9,8 @@ export default function AppHomePage() {
           <div className="mx-auto flex max-w-4xl flex-col items-center text-center">
             <div className="relative mb-4 h-48 w-48 md:h-72 md:w-72">
               <Image
-                src="/logo.png"
-                alt="La Main Rouge logó"
+                src="/logo-tetsuryu.png"
+                alt="Tetsuryū-kai logó"
                 fill
                 className="object-contain drop-shadow-[0_18px_50px_rgba(0,0,0,0.6)]"
                 priority
@@ -18,11 +18,15 @@ export default function AppHomePage() {
             </div>
 
             <p className="mb-2 text-lg font-medium text-white/90 md:text-2xl">
-              La loyauté avant tout.
-            </p>
+  義理と人情を忘れるな
+</p>
+
+<p className="mb-2 text-sm text-white/60 md:text-base">
+  Soha ne feledd a kötelességet és az emberiességet.
+</p>
 
             <h1 className="mb-6 text-4xl font-semibold tracking-tight text-white md:text-6xl">
-              Üdvözöljük a LaMainRouge weboldalán
+              Üdvözöljük a Tetsuryū-Kai weboldalán
             </h1>
 
             <p className="max-w-4xl text-base leading-8 text-white/76 md:text-lg">

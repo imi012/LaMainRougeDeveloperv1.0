@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAppUser } from "@/lib/server/app-auth";
+import { checkFormSpamProtection } from "@/lib/server/form-spam-protection";
 
 type TicketType = "sanction" | "inactivity" | "namechange";
 
@@ -153,6 +154,37 @@ export async function POST(req: Request) {
       row.namechange_reason = namechangeReason;
       row.title = "Névváltás";
       row.description = `${oldName} → ${newName} (${namechangeReason})`;
+    }
+
+    const spamMessage = await checkFormSpamProtection({
+      admin: auth.admin,
+      table: "tickets",
+      userId: auth.userId,
+      timeColumn: "created_at",
+      fingerprint: {
+        type,
+        sanction_imgur_url: row.sanction_imgur_url ?? null,
+        sanction_reason: row.sanction_reason ?? null,
+        inactivity_from: row.inactivity_from ?? null,
+        inactivity_to: row.inactivity_to ?? null,
+        old_name: row.old_name ?? null,
+        new_name: row.new_name ?? null,
+        namechange_reason: row.namechange_reason ?? null,
+      },
+      selectColumns: [
+        "type",
+        "sanction_imgur_url",
+        "sanction_reason",
+        "inactivity_from",
+        "inactivity_to",
+        "old_name",
+        "new_name",
+        "namechange_reason",
+      ],
+    });
+
+    if (spamMessage) {
+      return NextResponse.json({ ok: false, message: spamMessage }, { status: 429 });
     }
 
     const ins = await auth.admin.from("tickets").insert(row).select("id").maybeSingle();

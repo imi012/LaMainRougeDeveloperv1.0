@@ -39,11 +39,13 @@ export default function Page() {
 
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [discordName, setDiscordName] = useState("");
   const [pastebinUrl, setPastebinUrl] = useState("");
   const [row, setRow] = useState<LoreRow | null>(null);
+  const [previewText, setPreviewText] = useState<string | null>(null);
 
   async function authedFetch(url: string, init?: RequestInit) {
     const headers: Record<string, string> = {
@@ -65,6 +67,33 @@ export default function Page() {
     }
 
     return json;
+  }
+
+  async function loadPreview(url: string) {
+    const cleanUrl = normalizeUrl(url);
+    if (!cleanUrl) {
+      setPreviewText(null);
+      return;
+    }
+
+    setPreviewBusy(true);
+
+    try {
+      const json = await authedFetch("/api/lore/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pastebin_url: cleanUrl,
+        }),
+      });
+
+      setPreviewText((json?.text || "").toString());
+    } catch (e: any) {
+      setPreviewText(null);
+      throw new Error(e?.message || "Nem sikerült betölteni az előnézetet.");
+    } finally {
+      setPreviewBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -99,9 +128,43 @@ export default function Page() {
         if (cancelled) return;
 
         const current = (json.row ?? null) as LoreRow | null;
+        const currentUrl = current?.pastebin_url ?? current?.lore_url ?? "";
+
         setRow(current);
         setDiscordName(current?.discord_name ?? "");
-        setPastebinUrl(current?.pastebin_url ?? current?.lore_url ?? "");
+        setPastebinUrl(currentUrl);
+
+        if (currentUrl) {
+          try {
+            const previewRes = await fetch("/api/lore/preview", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({
+                pastebin_url: currentUrl,
+              }),
+            });
+
+            const previewTextResponse = await previewRes.text();
+            const previewJson = previewTextResponse ? JSON.parse(previewTextResponse) : {};
+
+            if (!previewRes.ok || previewJson?.ok === false) {
+              throw new Error(previewJson?.message || "Nem sikerült betölteni az előnézetet.");
+            }
+
+            if (!cancelled) {
+              setPreviewText((previewJson?.text || "").toString());
+            }
+          } catch {
+            if (!cancelled) {
+              setPreviewText(null);
+            }
+          }
+        } else {
+          setPreviewText(null);
+        }
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? "Hiba történt.");
       }
@@ -138,6 +201,9 @@ export default function Page() {
       setRow((json.row ?? null) as LoreRow | null);
       setDiscordName(json.row?.discord_name ?? cleanDiscordName);
       setPastebinUrl(json.row?.pastebin_url ?? cleanPastebinUrl);
+
+      await loadPreview(json.row?.pastebin_url ?? cleanPastebinUrl);
+
       setSuccess("Karaktertörténet sikeresen elmentve.");
     } catch (e: any) {
       setError(e?.message ?? "Hiba történt.");
@@ -215,6 +281,21 @@ export default function Page() {
               className="w-full rounded-2xl border px-4 py-3 text-sm"
             />
           </div>
+
+          {previewBusy ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/70">
+              Előnézet betöltése...
+            </div>
+          ) : previewText ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+              <div className="mb-3 text-xs uppercase tracking-[0.18em] text-white/45">
+                Előnézet
+              </div>
+              <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-white/80">
+                {previewText}
+              </pre>
+            </div>
+          ) : null}
 
           {error ? (
             <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">

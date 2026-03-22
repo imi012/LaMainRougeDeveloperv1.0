@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAppUser } from "@/lib/server/app-auth";
 
+const CREATE_COOLDOWN_MS = 10_000;
+
 export async function POST(req: Request) {
   const auth = await requireAppUser(req, { requireEventManager: true });
   if (!auth.ok) {
@@ -14,6 +16,31 @@ export async function POST(req: Request) {
 
     if (!name) {
       return NextResponse.json({ ok: false, message: "Add meg az esemény címét." }, { status: 400 });
+    }
+
+    const { data: lastCreated, error: lastCreatedErr } = await auth.admin
+      .from("events")
+      .select("created_at")
+      .eq("created_by", auth.userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastCreatedErr) {
+      console.error("events create cooldown check error:", lastCreatedErr);
+      return NextResponse.json({ ok: false, message: "Nem sikerült ellenőrizni a létrehozási limitet." }, { status: 500 });
+    }
+
+    if (lastCreated?.created_at) {
+      const lastCreatedAt = new Date(lastCreated.created_at).getTime();
+      const now = Date.now();
+
+      if (!Number.isNaN(lastCreatedAt) && now - lastCreatedAt < CREATE_COOLDOWN_MS) {
+        return NextResponse.json(
+          { ok: false, message: "Túl gyorsan próbálsz új eseményt létrehozni. Kérlek várj pár másodpercet." },
+          { status: 429 }
+        );
+      }
     }
 
     const { data, error } = await auth.admin

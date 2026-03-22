@@ -324,12 +324,19 @@ export default function EsemenyekPage() {
     try {
       await apiFetch("/api/events/set-participant", {
         method: "POST",
-        body: JSON.stringify({ event_id: eventId, user_id: userId, attended }),
+        body: JSON.stringify({
+          event_id: eventId,
+          user_id: userId,
+          attended,
+          ...(attended ? { was_online: true } : {}),
+        }),
       });
 
       setParticipants((prev) =>
         prev.map((p) =>
-          p.event_id === eventId && p.user_id === userId ? { ...p, attended } : p
+          p.event_id === eventId && p.user_id === userId
+            ? { ...p, attended, ...(attended ? { was_online: true } : {}) }
+            : p
         )
       );
     } catch (error: any) {
@@ -499,7 +506,6 @@ export default function EsemenyekPage() {
         <h1 className="text-3xl font-bold tracking-tight text-white">Események</h1>
         <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
         <p className="max-w-3xl text-sm leading-7 text-white/70">
-         
           Importálható tagok: {importableMembers.length} fő
           {me ? <span className="ml-2 text-white/50"></span> : null}
         </p>
@@ -537,7 +543,7 @@ export default function EsemenyekPage() {
           <select
             value={newHolder}
             onChange={(e) => setNewHolder(e.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-3.5 py-3 text-white outline-none transition focus:border-red-500/50"
+            className="w-full rounded-2xl border borderwhite/10 bg-black/20 px-3.5 py-3 text-white outline-none transition focus:border-red-500/50"
           >
             <option value="">Szervező</option>
             {holderMembers.map((m) => (
@@ -555,9 +561,7 @@ export default function EsemenyekPage() {
           </button>
         </div>
 
-        <div className="text-xs leading-6 text-white/55">
-          
-        </div>
+        <div className="text-xs leading-6 text-white/55"></div>
       </section>
 
       <section className="space-y-5">

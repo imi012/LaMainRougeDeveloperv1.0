@@ -141,7 +141,7 @@ export default function AuditLogPage() {
       }
     }
 
-    load();
+    void load();
 
     return () => {
       cancelled = true;
@@ -149,95 +149,131 @@ export default function AuditLogPage() {
   }, [limit, router, supabase]);
 
   if (loading) {
-    return <div className="p-6 text-sm opacity-70">Betöltés...</div>;
+    return (
+      <div className="lmr-page">
+        <div className="px-1 py-6 text-sm text-white/70">Betöltés...</div>
+      </div>
+    );
   }
 
   if (me?.site_role !== "admin" && me?.site_role !== "owner") {
     return (
-      <div className="p-6">
-        <h1 className="text-3xl font-bold">Audit log</h1>
-        <p className="mt-3 text-sm opacity-80">Ehhez az oldalhoz csak site_role: admin vagy owner jogosultsággal lehet hozzáférni.</p>
+      <div className="lmr-page space-y-6">
+        <section className="space-y-4">
+          <div>
+            <h1 className="text-3xl font-bold text-white md:text-4xl">Audit log</h1>
+            <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+          </div>
+          <p className="text-sm text-white/80">
+            Ehhez az oldalhoz csak site_role: admin vagy owner jogosultsággal lehet hozzáférni.
+          </p>
+        </section>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center gap-3">
-        <div>
-          <h1 className="text-3xl font-bold">Audit log</h1>
-          <p className="mt-2 text-sm opacity-80">Itt látod a vezetőségi és admin műveletek naplózását.</p>
-        </div>
+    <div className="lmr-page lmr-page-wide space-y-8">
+      <section className="space-y-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <span className="lmr-chip inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Audit
+            </span>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">
+              Audit log
+            </h1>
+            <div className="mt-4 h-[2px] w-12 rounded-full bg-red-600/80" />
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/75">
+              Itt látod a vezetőségi és admin műveletek naplózását.
+            </p>
+          </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <select
-            value={String(limit)}
-            onChange={(e) => setLimit(Number(e.target.value) || 100)}
-            className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm"
-          >
-            <option value="50">Utolsó 50</option>
-            <option value="100">Utolsó 100</option>
-            <option value="250">Utolsó 250</option>
-          </select>
-          <button
-            onClick={() => router.refresh()}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
-          >
-            Frissítés
-          </button>
+          <div className="flex items-center gap-2">
+            <select
+              value={String(limit)}
+              onChange={(e) => setLimit(Number(e.target.value) || 100)}
+              className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none"
+            >
+              <option value="50">Utolsó 50</option>
+              <option value="100">Utolsó 100</option>
+              <option value="250">Utolsó 250</option>
+            </select>
+            <button
+              onClick={() => router.refresh()}
+              className="lmr-btn rounded-2xl px-4 py-2.5 text-sm"
+            >
+              Frissítés
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
 
       {error ? (
-        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>
+        <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {error}
+        </div>
       ) : null}
 
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10">
-        <table className="w-full text-sm">
-          <thead className="bg-white/5">
-            <tr className="text-left">
-              <th className="px-3 py-2">Idő</th>
-              <th className="px-3 py-2">Ki</th>
-              <th className="px-3 py-2">Jog</th>
-              <th className="px-3 py-2">Művelet</th>
-              <th className="px-3 py-2">Cél</th>
-              <th className="px-3 py-2">Részletek</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-3 opacity-70" colSpan={6}>Még nincs naplózott admin művelet.</td>
+      <section className="space-y-5">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Naplózott műveletek</h2>
+          <div className="mt-3 h-[2px] w-10 rounded-full bg-red-600/80" />
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-white/10">
+          <table className="w-full text-sm text-white/85">
+            <thead>
+              <tr className="border-b border-white/10 text-left text-white/60">
+                <th className="px-3 py-3 font-medium">Idő</th>
+                <th className="px-3 py-3 font-medium">Ki</th>
+                <th className="px-3 py-3 font-medium">Jog</th>
+                <th className="px-3 py-3 font-medium">Művelet</th>
+                <th className="px-3 py-3 font-medium">Cél</th>
+                <th className="px-3 py-3 font-medium">Részletek</th>
               </tr>
-            ) : (
-              rows.map((row) => (
-                <tr key={row.id} className="border-t border-white/10 align-top">
-                  <td className="px-3 py-2 whitespace-nowrap">{fmt(row.created_at)}</td>
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{row.actor_ic_name || "—"}</div>
-                    <div className="text-xs opacity-60">{row.actor_user_id || "—"}</div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${roleBadgeStyle(row.actor_site_role)}`}>
-                      {row.actor_site_role || "—"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">{prettifyAction(row.action)}</td>
-                  <td className="px-3 py-2">
-                    <div>{row.target_type || "—"}</div>
-                    <div className="text-xs opacity-60">{row.target_label || row.target_id || "—"}</div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <pre className="whitespace-pre-wrap break-words text-xs opacity-80">
-                      {row.details ? JSON.stringify(row.details, null, 2) : "—"}
-                    </pre>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-4 text-white/60" colSpan={6}>
+                    Még nincs naplózott admin művelet.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                rows.map((row) => (
+                  <tr key={row.id} className="border-b border-white/10 align-top last:border-b-0">
+                    <td className="px-3 py-3 whitespace-nowrap">{fmt(row.created_at)}</td>
+                    <td className="px-3 py-3">
+                      <div className="font-medium text-white">{row.actor_ic_name || "—"}</div>
+                      <div className="mt-1 text-xs text-white/50">{row.actor_user_id || "—"}</div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-1 text-xs ${roleBadgeStyle(row.actor_site_role)}`}
+                      >
+                        {row.actor_site_role || "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">{prettifyAction(row.action)}</td>
+                    <td className="px-3 py-3">
+                      <div>{row.target_type || "—"}</div>
+                      <div className="mt-1 text-xs text-white/50">
+                        {row.target_label || row.target_id || "—"}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <pre className="whitespace-pre-wrap break-words text-xs text-white/75">
+                        {row.details ? JSON.stringify(row.details, null, 2) : "—"}
+                      </pre>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

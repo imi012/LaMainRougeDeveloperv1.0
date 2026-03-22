@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAppUser } from "@/lib/server/app-auth";
+import { checkFormSpamProtection } from "@/lib/server/form-spam-protection";
 
 function formatMoney(value: string) {
   const digits = (value || "").replace(/\D/g, "");
@@ -43,6 +44,24 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient();
+
+  const spamMessage = await checkFormSpamProtection({
+    admin,
+    table: "service_requests",
+    userId: auth.userId,
+    timeColumn: "created_at",
+    fingerprint: {
+      vehicle_id,
+      event_name,
+      amount,
+      imgur_url,
+    },
+    selectColumns: ["vehicle_id", "event_name", "amount", "imgur_url"],
+  });
+
+  if (spamMessage) {
+    return NextResponse.json({ ok: false, message: spamMessage }, { status: 429 });
+  }
 
   const { data: vehicle, error: vehicleErr } = await admin
     .from("faction_vehicles")

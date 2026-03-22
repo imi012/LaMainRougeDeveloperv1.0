@@ -14,9 +14,22 @@ export async function POST(req: Request) {
     const id = (body?.id ?? "").toString().trim();
     const status = (body?.status ?? "").toString().trim();
 
-    if (!id || !status) return NextResponse.json({ ok: false, message: "Hiányzó id vagy status." }, { status: 400 });
+    if (!id || !status) {
+      return NextResponse.json({ ok: false, message: "Hiányzó id vagy status." }, { status: 400 });
+    }
 
     const admin = createAdminClient();
+
+    const ticketRes = await admin
+      .from("tickets")
+      .select("id, user_id, type, new_name")
+      .eq("id", id)
+      .single();
+
+    if (ticketRes.error || !ticketRes.data) {
+      console.error("ticket fetch error:", ticketRes.error);
+      return NextResponse.json({ ok: false, message: "A ticket nem található." }, { status: 404 });
+    }
 
     const upd = await admin
       .from("tickets")
@@ -26,6 +39,26 @@ export async function POST(req: Request) {
     if (upd.error) {
       console.error("ticket update error:", upd.error);
       return NextResponse.json({ ok: false, message: "Nem sikerült frissíteni." }, { status: 500 });
+    }
+
+    if (
+      status === "approved" &&
+      ticketRes.data.type === "namechange" &&
+      ticketRes.data.user_id &&
+      ticketRes.data.new_name
+    ) {
+      const profileUpd = await admin
+        .from("profiles")
+        .update({ ic_name: ticketRes.data.new_name })
+        .eq("user_id", ticketRes.data.user_id);
+
+      if (profileUpd.error) {
+        console.error("profile ic_name update error:", profileUpd.error);
+        return NextResponse.json(
+          { ok: false, message: "A ticket státusza mentve lett, de az IC név frissítése nem sikerült." },
+          { status: 500 }
+        );
+      }
     }
 
     await writeAdminAuditLog({
