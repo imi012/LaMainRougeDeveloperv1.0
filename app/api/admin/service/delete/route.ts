@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireLeadershipUser } from "@/lib/server/app-auth";
+import { requireAppUser } from "@/lib/server/app-auth";
 
 type Body = {
   id?: string;
 };
 
 export async function POST(req: Request) {
-  const auth = await requireLeadershipUser(req);
+  const auth = await requireAppUser(req, { requireLeadership: true });
   if (!auth.ok) {
     return NextResponse.json({ ok: false, message: auth.message }, { status: auth.status });
   }
