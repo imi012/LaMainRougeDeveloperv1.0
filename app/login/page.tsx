@@ -38,27 +38,45 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-6 text-white">
-      <div className="lmr-surface w-full max-w-md rounded-[28px] p-6 md:p-7">
-        <div className="mb-5">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/45">
-            La Main Rouge
+      <div className="lmr-surface w-full max-w-md rounded-[28px] p-7 md:p-8">
+
+        {/* HEADER */}
+        <div className="mb-6 text-center">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/40">
+            Tetsuryū-Kai
           </div>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">Belépés</h1>
-          <p className="mt-2 text-sm text-white/65">
-            Jelentkezz be a belső panelre, vagy hozz létre új fiókot.
+
+          <h1 className="mt-3 text-3xl font-bold tracking-tight">
+            {mode === "login" ? "Belépés" : "Regisztráció"}
+          </h1>
+
+          <p className="mt-3 text-sm text-white/65 leading-relaxed">
+            {mode === "login"
+              ? "Jelentkezz be a belső panelre."
+              : "Hozz létre új fiókot a rendszer használatához."}
           </p>
         </div>
 
-        <div className="mt-4 flex gap-2">
+        {/* MODE SWITCH */}
+        <div className="mb-5 flex gap-2">
           <button
-            className={`rounded-2xl border px-4 py-2.5 text-sm font-medium ${mode === "login" ? "border-white/18 bg-white/12" : "border-white/10 bg-white/[0.04]"}`}
+            className={`flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition ${
+              mode === "login"
+                ? "border-white/20 bg-white/12"
+                : "border-white/10 bg-white/[0.04]"
+            }`}
             onClick={() => setMode("login")}
             type="button"
           >
             Belépés
           </button>
+
           <button
-            className={`rounded-2xl border px-4 py-2.5 text-sm font-medium ${mode === "signup" ? "border-white/18 bg-white/12" : "border-white/10 bg-white/[0.04]"}`}
+            className={`flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition ${
+              mode === "signup"
+                ? "border-white/20 bg-white/12"
+                : "border-white/10 bg-white/[0.04]"
+            }`}
             onClick={() => setMode("signup")}
             type="button"
           >
@@ -66,25 +84,37 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="mt-5 grid gap-3">
+        {/* FORM */}
+        <form onSubmit={onSubmit} className="grid gap-3">
+
           <input
-            className="rounded-2xl border p-3.5"
-            placeholder="Email"
+            className="rounded-2xl border px-4 py-3 text-sm"
+            placeholder="Email cím"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+
           <input
-            className="rounded-2xl border p-3.5"
+            className="rounded-2xl border px-4 py-3 text-sm"
             placeholder="Jelszó"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <button disabled={loading} className="rounded-2xl border border-white/14 bg-white/[0.06] px-4 py-3 font-semibold hover:bg-white/[0.09]">
+
+          <button
+            disabled={loading}
+            className="lmr-btn lmr-btn-primary mt-2 rounded-full py-3 text-sm font-semibold"
+          >
             {loading ? "..." : mode === "login" ? "Belépés" : "Regisztráció"}
           </button>
 
-          {msg && <p className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80">{msg}</p>}
+          {/* MESSAGE */}
+          {msg && (
+            <p className="mt-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80">
+              {msg}
+            </p>
+          )}
         </form>
       </div>
     </div>
