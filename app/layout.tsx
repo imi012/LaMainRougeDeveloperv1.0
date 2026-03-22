@@ -15,9 +15,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "LaMainRouge",
-  description: "LaMainRouge frakció weboldala",
+export const metadata = {
+  title: {
+    default: "Tetsuryū-Kai",
+    template: "%s | Tetsuryū-Kai",
+  },
 };
 
 export default function RootLayout({
